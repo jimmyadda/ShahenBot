@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en" dir="rtl">
+<head>
+    <meta charset="utf-8">
+    <title>ShahenBot – Admin Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Bootstrap via CDN -->
+    <link
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        rel="stylesheet"
+    >
+
+    <style>
+        body {
+            background: linear-gradient(135deg, #f3f6ff 0%, #fdfdfd 40%, #f5f5f5 100%);
+            min-height: 100vh;
+        }
+
+        .navbar-brand {
+            font-weight: 700;
+            letter-spacing: 0.03em;
+        }
+
+        .navbar {
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+        }
+
+        .page-title {
+            font-weight: 700;
+            letter-spacing: 0.03em;
+        }
+
+        .page-subtitle {
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+
+        .ticket-table {
+            font-size: 0.9rem;
+        }
+
+        .status-open {
+            color: #fff;
+            background-color: #dc3545;
+        }
+
+        .status-in_progress {
+            color: #212529;
+            background-color: #ffc107;
+        }
+
+        .status-closed {
+            color: #fff;
+            background-color: #198754;
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.65rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+
+        .truncate {
+            max-width: 320px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .card {
+            border-radius: 1rem;
+            box-shadow: 0 6px 20px rgba(15, 23, 42, 0.06);
+            border: none;
+        }
+
+        .card-header {
+            border-radius: 1rem 1rem 0 0 !important;
+            background: linear-gradient(135deg, #0d6efd 0%, #0b5ed7 60%, #0a58ca 100%);
+            color: #fff;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+        }
+
+        .filter-card {
+            border-radius: 1rem;
+            box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05);
+            border: none;
+        }
+
+        .filter-label {
+            font-weight: 500;
+            font-size: 0.85rem;
+        }
+
+        .badge-pill {
+            border-radius: 999px;
+        }
+    </style>
+</head>
+<body class="pb-4">
+
+<nav class="navbar navbar-expand-lg bg-white mb-4">
+    <div class="container">
+        <a class="navbar-brand" href="{{ url_for('admin_dashboard') }}">
+            🏢 ShahenBot
+        </a>
+
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+                data-bs-target="#navbarNav" aria-controls="navbarNav"
+                aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
+            <ul class="navbar-nav gap-2">
+                <li class="nav-item">
+                    <a class="nav-link active fw-semibold" aria-current="page"
+                       href="{{ url_for('admin_dashboard') }}">
+                        🎫 Tickets
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link fw-semibold"
+                       href="{{ url_for('admin_tenants') }}">
+                        👥 Tenants
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+
+    <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between mb-3">
+        <div>
+            <h1 class="page-title mb-1">Admin Dashboard</h1>
+            <div class="page-subtitle">
+                Manage building tickets in real time · {{ tickets|length }} ticket(s) in view
+            </div>
+        </div>
+        <div class="mt-3 mt-md-0">
+            <span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle badge-pill px-3 py-2">
+                API: ShahenBot WebApp
+            </span>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card filter-card mb-4">
+        <div class="card-body">
+            <form class="row g-3 align-items-end" method="get" action="{{ url_for('admin_dashboard') }}">
+                <div class="col-md-2">
+                    <label class="form-label filter-label">Status</label>
+                    <select class="form-select form-select-sm" name="status">
+                        {% for value, label in status_options %}
+                            <option value="{{ value }}"
+                                {% if value == status %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-2">
+                    <label class="form-label filter-label">Category</label>
+                    <select class="form-select form-select-sm" name="category">
+                        {% for value, label in category_options %}
+                            <option value="{{ value }}"
+                                {% if value == category %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label filter-label">Search</label>
+                    <input type="text" class="form-control form-control-sm" name="search"
+                           placeholder="Text / chat_id / category"
+                           value="{{ search }}">
+                </div>
+
+                <div class="col-md-2">
+                    <label class="form-label filter-label">Limit</label>
+                    <input type="number" class="form-control form-control-sm" name="limit"
+                           value="{{ limit }}" min="1" max="500">
+                </div>
+
+                <div class="col-md-3 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm flex-grow-1">
+                        🔍 Filter
+                    </button>
+                    <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-secondary btn-sm">
+                        Reset
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Tickets table -->
+    <div class="card">
+        <div class="card-header">
+            Tickets · {{ tickets|length }}
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-striped table-hover align-middle mb-0 ticket-table">
+                    <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>Chat ID</th>
+                        <th>Category</th>
+                        <th>Description</th>
+                        <th>Language</th>
+                        <th>Created at (UTC)</th>
+                        <th>Status</th>
+                        <th>Update</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% if tickets %}
+                        {% for t in tickets %}
+                            <tr>
+                                <td class="fw-semibold">{{ t.id }}</td>
+                                <td>{{ t.chat_id }}</td>
+                                <td>{{ t.category }}</td>
+                                <td class="truncate" title="{{ t.description }}">
+                                    {{ t.description }}
+                                </td>
+                                <td>{{ t.language }}</td>
+                                <td style="direction: ltr; font-family: monospace; font-size: 0.8rem;">
+                                    {{ t.created_at }}
+                                </td>
+                                <td>
+                                    <span class="status-badge
+                                        {% if t.status == 'open' %}status-open{% endif %}
+                                        {% if t.status == 'in_progress' %}status-in_progress{% endif %}
+                                        {% if t.status == 'closed' %}status-closed{% endif %}
+                                    ">
+                                        {{ t.status }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <form method="post"
+                                          action="{{ url_for('admin_update_status', ticket_id=t.id) }}">
+                                        <div class="input-group input-group-sm">
+                                            <select class="form-select form-select-sm" name="status">
+                                                <option value="open"
+                                                    {% if t.status == 'open' %}selected{% endif %}>
+                                                    open
+                                                </option>
+                                                <option value="in_progress"
+                                                    {% if t.status == 'in_progress' %}selected{% endif %}>
+                                                    in_progress
+                                                </option>
+                                                <option value="closed"
+                                                    {% if t.status == 'closed' %}selected{% endif %}>
+                                                    closed
+                                                </option>
+                                            </select>
+                                            <button class="btn btn-outline-secondary btn-sm" type="submit">
+                                                Save
+                                            </button>
+                                        </div>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="8" class="text-center py-3 text-muted">
+                                No tickets found.
+                            </td>
+                        </tr>
+                    {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Bootstrap JS (for navbar toggle) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

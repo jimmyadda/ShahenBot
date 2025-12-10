@@ -23,6 +23,9 @@ from shahenbot_db import (
     get_tenants_db,
     create_tenant_db,
     update_tenant_db,
+    get_tenants_by_apartment_db,    # NEW
+    get_tenant_by_chat_id_db,       # already exists
+    link_tenant_chat_db,     
 )
 
 
@@ -330,6 +333,39 @@ def admin_update_tenant(tenant_id: int):
 
     return redirect(url_for("admin_tenants", **request.args))
 
+# ───────────────────────────────────────────────
+#   API: TENANTS CHATID
+# ───────────────────────────────────────────────
+@app.get("/api/tenants/by_apartment/<apartment>")
+def api_tenants_by_apartment(apartment: str):
+    """
+    Return tenants for a given apartment.
+    Optional query param: only_without_chat=1
+    """
+    only_without_chat = request.args.get("only_without_chat") == "1"
+    tenants = get_tenants_by_apartment_db(apartment, only_without_chat=only_without_chat)
+    return jsonify({"tenants": tenants})
+
+@app.get("/api/tenants/by_chat/<int:chat_id>")
+def api_tenant_by_chat(chat_id: int):
+    tenant = get_tenant_by_chat_id_db(chat_id)
+    if not tenant:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify(tenant)
+
+@app.post("/api/tenants/<int:tenant_id>/link_chat")
+def api_link_tenant_chat(tenant_id: int):
+    data = request.get_json(silent=True) or {}
+    chat_id = data.get("chat_id")
+
+    if not isinstance(chat_id, int):
+        return jsonify({"error": "invalid_chat_id"}), 400
+
+    tenant = link_tenant_chat_db(tenant_id, chat_id)
+    if not tenant:
+        return jsonify({"error": "tenant_not_found"}), 404
+
+    return jsonify(tenant), 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001, debug=True)

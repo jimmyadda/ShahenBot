@@ -29,7 +29,15 @@
 "edit_ticket_prompt": "אנא שלח את הניסוח החדש של הדיווח:",
 "edit_ticket_success": "✨ הדיווח עודכן בהצלחה!",
 "edit_ticket_fail": "❌ לא ניתן לעדכן את הדיווח כרגע.",
-"edit_ticket_closed": "אי אפשר לערוך דיווח שנסגר. אם עדיין יש בעיה – פתח/י דיווח חדש."
+"edit_ticket_closed": "אי אפשר לערוך דיווח שנסגר. אם עדיין יש בעיה – פתח/י דיווח חדש.",
+"register_prompt": "באיזה מספר דירה את/ה? (לדוגמה: 12)",
+"register_not_found": "לא מצאתי דייר קשור לדירה {apartment}. נא לפנות לוועד הבית.",
+"register_choose_tenant": "נמצאו כמה דיירים לדירה {apartment}. מי את/ה?",
+"register_success": "מעולה! חיברתי את המשתמש לדייר {name}, דירה {apartment}.",
+"register_link_fail": "לא הצלחתי לחבר את המשתמש לדייר. נא לנסות שוב או לפנות לוועד.",
+"register_already_linked": "הפרופיל שלך כבר מחובר לדייר {name}, דירה {apartment}.",
+"tenant_type_owner_short": "בעלים",
+"tenant_type_rent_short": "שוכר"
   },
   "en": {
     "start": "Hi 👋 I'm the building assistant bot.\nChoose language and then you can report a problem.",
@@ -61,7 +69,15 @@
 "edit_ticket_prompt": "Please send the updated description:",
 "edit_ticket_success": "✨ Your report was successfully updated!",
 "edit_ticket_fail": "❌ Unable to update the report at this time.",
-"edit_ticket_closed": "You cannot edit a ticket that is already closed. If the issue continues, please open a new ticket."
+"edit_ticket_closed": "You cannot edit a ticket that is already closed. If the issue continues, please open a new ticket.",
+"register_prompt": "What is your apartment number? (e.g., 12)",
+"register_not_found": "No tenant was found for apartment {apartment}. Please contact the building manager.",
+"register_choose_tenant": "Multiple tenants found for apartment {apartment}. Who are you?",
+"register_success": "Great! I linked your profile to {name}, apartment {apartment}.",
+"register_link_fail": "I couldn’t link your profile to a tenant. Please try again or contact the manager.",
+"register_already_linked": "Your profile is already linked to {name}, apartment {apartment}.",
+"tenant_type_owner_short": "owner",
+"tenant_type_rent_short": "renter"
   },
   "fr": {
     "start": "Salut 👋 je suis le bot de l’immeuble.\nChoisissez une langue puis vous pourrez signaler un problème.",
@@ -93,7 +109,16 @@
 "edit_ticket_prompt": "Veuillez envoyer la nouvelle description :",
 "edit_ticket_success": "✨ Le signalement a été mis à jour avec succès !",
 "edit_ticket_fail": "❌ Impossible de mettre à jour le signalement pour le moment.",
-"edit_ticket_closed": "Vous ne pouvez pas modifier un ticket déjà clôturé. Si le problème persiste, veuillez créer un nouveau ticket."
+"edit_ticket_closed": "Vous ne pouvez pas modifier un ticket déjà clôturé. Si le problème persiste, veuillez créer un nouveau ticket.",
+"register_prompt": "Quel est votre numéro d’appartement ? (par ex. 12)",
+"register_not_found": "Aucun locataire trouvé pour l’appartement {apartment}. Veuillez contacter le syndic.",
+"register_choose_tenant": "Plusieurs locataires trouvés pour l’appartement {apartment}. Qui êtes-vous ?",
+"register_success": "Parfait ! J’ai lié votre profil à {name}, appartement {apartment}.",
+"register_link_fail": "Je n’ai pas pu lier votre profil à un locataire. Veuillez réessayer ou contacter le syndic.",
+"register_already_linked": "Votre profil est déjà lié à {name}, appartement {apartment}.",
+"tenant_type_owner_short": "propriétaire",
+"tenant_type_rent_short": "locataire"
+
 
   }
 }

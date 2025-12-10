@@ -438,5 +438,71 @@ def update_ticket_description_db(ticket_id: int, description: str):
         "UPDATE tickets SET description = ? WHERE id = ?",
         (description, ticket_id),
     )
+
+    #chaid to tenant
+def get_tenants_by_apartment_db(apartment: str, only_without_chat: bool = False) -> list:
+    """
+    Return tenants for a given apartment.
+    If only_without_chat=True, returns only rows where chat_id IS NULL.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+
+    query = """
+        SELECT id, name, apartment, tenant_type, email,
+               payment_type, next_payment_date, parking_slots, chat_id
+        FROM tenants
+        WHERE apartment = ?
+    """
+    params = [apartment]
+
+    if only_without_chat:
+        query += " AND (chat_id IS NULL OR chat_id = '')"
+
+    query += " ORDER BY id"
+
+    cur.execute(query, params)
+    rows = cur.fetchall()
+    conn.close()
+
+    tenants = []
+    for r in rows:
+        tenants.append(
+            {
+                "id": r[0],
+                "name": r[1],
+                "apartment": r[2],
+                "tenant_type": r[3],
+                "email": r[4],
+                "payment_type": r[5],
+                "next_payment_date": r[6],
+                "parking_slots": r[7],
+                "chat_id": r[8],
+            }
+        )
+    return tenants
+
+
+def link_tenant_chat_db(tenant_id: int, chat_id: int) -> dict | None:
+    """
+    Link a Telegram chat_id to a tenant.
+    For safety, first clear this chat_id from any other tenant (unique mapping).
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # Optional: ensure no other tenant keeps this chat_id
+    cur.execute("UPDATE tenants SET chat_id = NULL WHERE chat_id = ?", (chat_id,))
+
+    # Link to target tenant
+    cur.execute(
+        "UPDATE tenants SET chat_id = ? WHERE id = ?",
+        (chat_id, tenant_id),
+    )
+    conn.commit()
+    conn.close()
+
+    return get_tenant_by_id_db(tenant_id)
+
     conn.commit()
     conn.close()

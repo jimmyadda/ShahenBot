@@ -67,7 +67,6 @@ def api_get_user_language(chat_id: int, default_lang: str = "he") -> str:
         logger.exception("API get_language exception: %s", e)
     return default_lang
 
-
 def api_set_user_language(chat_id: int, lang: str):
     try:
         url = f"{API_BASE_URL}/api/user/{chat_id}/language"
@@ -76,7 +75,6 @@ def api_set_user_language(chat_id: int, lang: str):
             logger.error("API set_language error: %s %s", resp.status_code, resp.text)
     except Exception as e:
         logger.exception("API set_language exception: %s", e)
-
 
 def api_create_ticket(chat_id: int, lang: str, category: str, description: str):
     try:
@@ -127,6 +125,46 @@ def api_update_ticket_description(ticket_id: int, chat_id: int, new_description:
     except Exception as e:
         logger.exception("API update_ticket_description exception: %s", e)
         return {"success": False, "error": "exception"}
+
+def api_get_tenant_by_chat(chat_id: int):
+    try:
+        url = f"{API_BASE_URL}/api/tenants/by_chat/{chat_id}"
+        resp = requests.get(url, timeout=5)
+        if resp.ok:
+            return resp.json()
+    except Exception as e:
+        logger.exception("API get_tenant_by_chat exception: %s", e)
+    return None
+
+
+def api_get_tenants_by_apartment(apartment: str, only_without_chat: bool = True):
+    try:
+        url = f"{API_BASE_URL}/api/tenants/by_apartment/{apartment}"
+        params = {"only_without_chat": "1"} if only_without_chat else {}
+        resp = requests.get(url, params=params, timeout=5)
+        if resp.ok:
+            data = resp.json()
+            return data.get("tenants", [])
+    except Exception as e:
+        logger.exception("API get_tenants_by_apartment exception: %s", e)
+    return []
+
+
+def api_link_tenant_chat(tenant_id: int, chat_id: int):
+    try:
+        url = f"{API_BASE_URL}/api/tenants/{tenant_id}/link_chat"
+        resp = requests.post(url, json={"chat_id": chat_id}, timeout=5)
+        if resp.ok:
+            return resp.json()
+        else:
+            logger.error(
+                "API link_tenant_chat error: %s %s",
+                resp.status_code,
+                resp.text,
+            )
+    except Exception as e:
+        logger.exception("API link_tenant_chat exception: %s", e)
+    return None
 
 
 # ───────────── Keyword-based category detection ─────────────
@@ -184,7 +222,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         get_text(lang, "start"),
         reply_markup=InlineKeyboardMarkup(lang_keyboard + main_keyboard),
     )
-
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -294,6 +331,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(get_text(lang, "cancelled"))
         return
 
+    # /register flow – user chooses tenant from list
+    if data.startswith("regtenant_"):
+        tenant_id = int(data.split("_")[1])
+        chat_id = query.message.chat.id
+        lang = api_get_user_language(chat_id)
+
+        linked = api_link_tenant_chat(tenant_id, chat_id)
+        if linked:
+            text = get_text(lang, "register_success").format(
+                name=linked.get("name", ""),
+                apartment=linked.get("apartment") or "",
+            )
+        else:
+            text = get_text(lang, "register_link_fail")
+
+        await query.edit_message_text(text)
+        return
     # Edit ticket button
     if data.startswith("edit_"):
         tid = int(data.split("_")[1])
@@ -302,7 +356,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.message.reply_text(get_text(lang, "edit_ticket_prompt"))
         return
-
 
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -333,6 +386,60 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         context.user_data.pop("awaiting_edit", None)
         context.user_data.pop("editing_ticket_id", None)
+        return
+    
+
+    # /register flow – user just sent apartment number/name
+    if context.user_data.get("awaiting_apartment"):
+        apartment = text.strip()
+
+        tenants = api_get_tenants_by_apartment(apartment, only_without_chat=True)
+
+        # no tenants found
+        if not tenants:
+            await msg.reply_text(
+                get_text(lang, "register_not_found").format(apartment=apartment)
+            )
+            context.user_data.pop("awaiting_apartment", None)
+            return
+
+        # exactly one tenant – link directly
+        if len(tenants) == 1:
+            t = tenants[0]
+            linked = api_link_tenant_chat(t["id"], chat_id)
+            if linked:
+                await msg.reply_text(
+                    get_text(lang, "register_success").format(
+                        name=linked.get("name", ""),
+                        apartment=linked.get("apartment") or apartment,
+                    )
+                )
+            else:
+                await msg.reply_text(get_text(lang, "register_link_fail"))
+
+            context.user_data.pop("awaiting_apartment", None)
+            return
+
+        # more than one tenant – let user choose
+        context.user_data.pop("awaiting_apartment", None)
+
+        buttons = []
+        for t in tenants:
+            label_parts = [t.get("name", "")]
+            if t.get("tenant_type") == "owner":
+                label_parts.append("(" + get_text(lang, "tenant_type_owner_short") + ")")
+            elif t.get("tenant_type") == "rent":
+                label_parts.append("(" + get_text(lang, "tenant_type_rent_short") + ")")
+            label = " ".join(p for p in label_parts if p)
+
+            buttons.append(
+                [InlineKeyboardButton(label, callback_data=f"regtenant_{t['id']}")]
+            )
+
+        await msg.reply_text(
+            get_text(lang, "register_choose_tenant").format(apartment=apartment),
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
         return
 
     # Manual flow: user chose category via buttons, now sends description
@@ -422,16 +529,33 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(lang_keyboard + main_keyboard),
     )
 
-
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.error("Error while handling update:", exc_info=context.error)
 
+async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    lang = api_get_user_language(chat_id)
+
+    # Check if already linked
+    tenant = api_get_tenant_by_chat(chat_id)
+    if tenant:
+        txt = get_text(lang, "register_already_linked").format(
+            name=tenant.get("name", ""),
+            apartment=tenant.get("apartment") or "",
+        )
+        await update.message.reply_text(txt)
+        return
+
+    # Ask for apartment
+    context.user_data["awaiting_apartment"] = True
+    await update.message.reply_text(get_text(lang, "register_prompt"))
 
 def main():
     load_messages()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("register", register))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     app.add_error_handler(error_handler)

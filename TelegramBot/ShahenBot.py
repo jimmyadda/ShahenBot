@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import json
@@ -848,4 +849,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    logging.basicConfig(...)
+    asyncio.run(main())

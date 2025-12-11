@@ -1,0 +1,5 @@
+python-telegram-bot==20.3
+Flask==3.0.0
+python-dotenv
+requests
+gunicorn

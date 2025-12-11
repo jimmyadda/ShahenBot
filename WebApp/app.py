@@ -10,7 +10,8 @@ from flask import (
 )
 from dotenv import load_dotenv
 import requests
-
+import uuid
+from werkzeug.utils import secure_filename
 from shahenbot_db import (
     init_db,
     get_user_language_db,
@@ -25,12 +26,20 @@ from shahenbot_db import (
     update_tenant_db,
     get_tenants_by_apartment_db,    # NEW
     get_tenant_by_chat_id_db,       # already exists
-    link_tenant_chat_db,     
+    link_tenant_chat_db,
+    find_open_ticket_by_category_db,
+    add_ticket_watcher_db,              
+    get_ticket_watchers_db,
+    get_tickets_for_chat_db   
 )
 
 
+UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "static", "uploads")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -39,24 +48,20 @@ app = Flask(__name__)
 init_db()
 
 def send_telegram_message(chat_id: int, text: str):
-    """
-    Send a message to a Telegram user when ticket status changes, etc.
-    """
     if not BOT_TOKEN:
-        app.logger.warning("BOT_TOKEN not set, cannot send Telegram messages.")
+        print("BOT_TOKEN not set, cannot send Telegram messages")
         return
-
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     try:
-        resp = requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=5)
+        resp = requests.post(
+            f"{TELEGRAM_API}/sendMessage",
+            json={"chat_id": chat_id, "text": text},
+            timeout=10,
+        )
         if not resp.ok:
-            app.logger.error(
-                "Failed to send Telegram message: %s %s",
-                resp.status_code,
-                resp.text,
-            )
+            print("Telegram sendMessage error:", resp.status_code, resp.text)
     except Exception as e:
-        app.logger.exception("Error sending Telegram message: %s", e)
+        print("Telegram sendMessage exception:", e)
+
 
 
 
@@ -102,6 +107,7 @@ def api_create_ticket():
     category = data.get("category")
     description = data.get("description")
     language = data.get("language", "he")
+    image_url = data.get("image_url")  # NEW
 
     if not chat_id or not isinstance(chat_id, int):
         return jsonify({"error": "Invalid or missing 'chat_id' (int required)"}), 400
@@ -115,12 +121,40 @@ def api_create_ticket():
         category=category,
         description=description,
         language=language,
+        image_url=image_url,
         status="open",
     )
 
     return jsonify(ticket), 201
 
+@app.post("/api/tickets/check_duplicate")
+def api_check_duplicate():
+    data = request.get_json(silent=True) or {}
+    category = data.get("category")
 
+    if not category:
+        return jsonify({"error": "missing_category"}), 400
+
+    ticket = find_open_ticket_by_category_db(category)
+    if not ticket:
+        return jsonify({"duplicate": False})
+
+    return jsonify({"duplicate": True, "ticket": ticket})
+
+@app.post("/api/tickets/<int:ticket_id>/watchers")
+def api_add_ticket_watcher(ticket_id: int):
+    data = request.get_json(silent=True) or {}
+    chat_id = data.get("chat_id")
+    if not isinstance(chat_id, int):
+        return jsonify({"error": "invalid_chat_id"}), 400
+
+    # Require that this chat_id belongs to a registered tenant
+    tenant = get_tenant_by_chat_id_db(chat_id)
+    if not tenant:
+        return jsonify({"error": "not_registered"}), 403
+
+    add_ticket_watcher_db(ticket_id, chat_id)
+    return jsonify({"ok": True})
 # ───────────────────────────────────────────────
 #   API: LIST TICKETS
 # ───────────────────────────────────────────────
@@ -143,6 +177,13 @@ def api_get_tickets():
     )
     return jsonify({"tickets": tickets})
 
+@app.get("/api/tickets/by_chat/<int:chat_id>")
+def api_tickets_by_chat(chat_id: int):
+    """
+    Return tickets opened by this chat_id or watched by this chat_id.
+    """
+    data = get_tickets_for_chat_db(chat_id)
+    return jsonify(data)
 
 # ───────────────────────────────────────────────
 #   API: UPDATE TICKET DESCRIPTION (for Telegram edit)
@@ -177,6 +218,26 @@ def api_update_ticket_description(ticket_id: int):
 
     return jsonify(updated), 200
 
+@app.post("/api/upload_image")
+def api_upload_image():
+    """
+    Receive an image file from Telegram bot, save it, return its URL.
+    """
+    if "file" not in request.files:
+        return jsonify({"error": "no_file"}), 400
+
+    f = request.files["file"]
+    if f.filename == "":
+        return jsonify({"error": "empty_filename"}), 400
+
+    ext = os.path.splitext(f.filename)[1] or ".jpg"
+    filename = secure_filename(f"{uuid.uuid4().hex}{ext}")
+    save_path = os.path.join(UPLOAD_FOLDER, filename)
+    f.save(save_path)
+
+    # public URL (assuming /static is served)
+    url = url_for("static", filename=f"uploads/{filename}", _external=True)
+    return jsonify({"url": url})
 
 # ───────────────────────────────────────────────
 #   ADMIN DASHBOARD (HTML) – TICKETS
@@ -197,6 +258,7 @@ def admin_dashboard():
         category=category,
         search=search,
     )
+    print(tickets, len(tickets))
 
     status_options = [
         ("all", "All"),
@@ -229,33 +291,40 @@ def admin_dashboard():
 #   ADMIN: UPDATE TICKET STATUS + Telegram notify
 # ───────────────────────────────────────────────
 @app.post("/admin/tickets/<int:ticket_id>/status")
-def admin_update_status(ticket_id: int):
+def admin_update_status(ticket_id):
     new_status = request.form.get("status")
-    if new_status not in ("open", "in_progress", "closed"):
-        return redirect(url_for("admin_dashboard"))
+
+    old_ticket = get_ticket_by_id_db(ticket_id)
+    old_status = old_ticket["status"] if old_ticket else None
 
     update_ticket_status_db(ticket_id, new_status)
-
     ticket = get_ticket_by_id_db(ticket_id)
 
-    # Notify user via Telegram
-    if ticket:
-        chat_id = ticket["chat_id"]
-        lang = ticket["language"]
-        if lang == "he":
-            if new_status == "open":
-                s = "פתוח"
-            elif new_status == "in_progress":
-                s = "בטיפול"
-            else:
-                s = "נסגר"
-            text = f"הדיווח #{ticket['id']} עודכן לסטטוס: {s}"
-        else:
-            text = f"Your ticket #{ticket['id']} status changed to {new_status}"
+    # Notify only if status actually changed
+    if ticket and old_status != new_status:
+        chat_id_reporter = ticket["chat_id"]
+        watchers = get_ticket_watchers_db(ticket_id)
 
-        send_telegram_message(chat_id, text)
+        recipients = set(watchers)
+        if chat_id_reporter:
+            recipients.add(chat_id_reporter)
 
-    return redirect(url_for("admin_dashboard", **request.args))
+        # Simple text in Hebrew for now, can be multilingual later
+        category = ticket["category"]
+        desc = ticket["description"]
+        status_txt = new_status
+
+        notify_text = (
+            f"עדכון דיווח #{ticket_id}:\n"
+            f"קטגוריה: {category}\n"
+            f"סטטוס חדש: {status_txt}\n\n"
+            f"תיאור:\n{desc}"
+        )
+
+        for cid in recipients:
+            send_telegram_message(cid, notify_text)
+
+    return redirect(url_for("admin_dashboard"))
 
 
 # ───────────────────────────────────────────────

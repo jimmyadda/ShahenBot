@@ -37,7 +37,17 @@
 "register_link_fail": "לא הצלחתי לחבר את המשתמש לדייר. נא לנסות שוב או לפנות לוועד.",
 "register_already_linked": "הפרופיל שלך כבר מחובר לדייר {name}, דירה {apartment}.",
 "tenant_type_owner_short": "בעלים",
-"tenant_type_rent_short": "שוכר"
+"tenant_type_rent_short": "שוכר",
+"btn_register": "🔑 הרשמה / שיוך לדירה",
+"dup_ticket_found": "כבר קיים דיווח פתוח על {category} (#{ticket_id}):\n\"{desc}\"\n\nלהוסיף אותך למעקב?",
+"dup_added_watcher": "הוספתי אותך למעקב אחרי דיווח #{ticket_id}.",
+"dup_add_watcher_fail": "לא הצלחתי להוסיף אותך למעקב. נסה/י שוב מאוחר יותר.",
+"dup_no_context": "לא נמצא דיווח פתוח מתאים.",
+"dup_declined": "בסדר, לא הוספתי אותך למעקב.",
+  "dup_need_register": "כדי לעקוב אחרי דיווח, צריך קודם להירשם לדירה.\nלחץ/י על הכפתור למטה 🔑",
+    "mytickets_none": "אין לך דיווחים פתוחים או במעקב.",
+  "mytickets_yours": "📝 הדיווחים שפתחת:",
+  "mytickets_watching": "👀 דיווחים שאת/ה במעקב אחריהם:"
   },
   "en": {
     "start": "Hi 👋 I'm the building assistant bot.\nChoose language and then you can report a problem.",
@@ -77,7 +87,18 @@
 "register_link_fail": "I couldn’t link your profile to a tenant. Please try again or contact the manager.",
 "register_already_linked": "Your profile is already linked to {name}, apartment {apartment}.",
 "tenant_type_owner_short": "owner",
-"tenant_type_rent_short": "renter"
+"tenant_type_rent_short": "renter",
+"btn_register": "🔑 Register / Link apartment",
+"dup_ticket_found": "There is already an open ticket for {category} (#{ticket_id}):\n\"{desc}\"\n\nDo you want to be added as a watcher?",
+"dup_added_watcher": "You have been added as a watcher on ticket #{ticket_id}.",
+"dup_add_watcher_fail": "I couldn’t add you as a watcher. Please try again later.",
+"dup_no_context": "No open ticket context found.",
+"dup_declined": "Okay, I won’t add you as a watcher.",
+  "dup_need_register": "To follow a ticket, you must register your apartment first.\nTap the Register button below 🔑",
+    "mytickets_none": "You have no open or watched tickets.",
+  "mytickets_yours": "📝 Tickets you opened:",
+  "mytickets_watching": "👀 Tickets you are watching:"
+
   },
   "fr": {
     "start": "Salut 👋 je suis le bot de l’immeuble.\nChoisissez une langue puis vous pourrez signaler un problème.",
@@ -117,7 +138,17 @@
 "register_link_fail": "Je n’ai pas pu lier votre profil à un locataire. Veuillez réessayer ou contacter le syndic.",
 "register_already_linked": "Votre profil est déjà lié à {name}, appartement {apartment}.",
 "tenant_type_owner_short": "propriétaire",
-"tenant_type_rent_short": "locataire"
+"tenant_type_rent_short": "locataire",
+"btn_register": "🔑 S’enregistrer / Lier l’appartement",
+"dup_ticket_found": "Il existe déjà un ticket ouvert pour {category} (#{ticket_id}) :\n« {desc} »\n\nVoulez-vous être ajouté comme suiveur ?",
+"dup_added_watcher": "Vous avez été ajouté comme suiveur du ticket #{ticket_id}.",
+"dup_add_watcher_fail": "Je n’ai pas pu vous ajouter comme suiveur. Veuillez réessayer plus tard.",
+"dup_no_context": "Aucun ticket ouvert correspondant trouvé.",
+"dup_declined": "D’accord, vous n’avez pas été ajouté comme suiveur.",
+  "dup_need_register": "Pour suivre un ticket, vous devez d’abord enregistrer votre appartement.\nAppuyez sur le bouton ci-dessous 🔑",
+    "mytickets_none": "Vous n’avez aucun ticket ouvert ou suivi.",
+  "mytickets_yours": "📝 Vos tickets ouverts :",
+  "mytickets_watching": "👀 Tickets que vous suivez :"
 
 
   }

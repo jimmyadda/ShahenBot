@@ -51,7 +51,17 @@ def init_db():
             language TEXT NOT NULL,
             status TEXT NOT NULL,
             created_at TEXT NOT NULL,
+            image_url TEXT,
             tenant_id INTEGER
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ticket_watchers (
+            ticket_id INTEGER NOT NULL,
+            chat_id INTEGER NOT NULL,
+            PRIMARY KEY (ticket_id, chat_id)
         )
         """
     )
@@ -60,6 +70,8 @@ def init_db():
     cols = [r[1] for r in cur.fetchall()]
     if "tenant_id" not in cols:
         cur.execute("ALTER TABLE tickets ADD COLUMN tenant_id INTEGER")
+    if "image_url" not in cols:
+        cur.execute("ALTER TABLE tickets ADD COLUMN image_url TEXT")
 
     conn.commit()
     conn.close()
@@ -142,7 +154,6 @@ def create_tenant_db(
 
     return get_tenant_by_id_db(tenant_id)
 
-
 def get_tenant_by_id_db(tenant_id: int) -> dict | None:
     conn = get_connection()
     cur = conn.cursor()
@@ -171,7 +182,6 @@ def get_tenant_by_id_db(tenant_id: int) -> dict | None:
         "parking_slots": row[7],
         "chat_id": row[8],
     }
-
 
 def get_tenant_by_chat_id_db(chat_id: int) -> dict | None:
     conn = get_connection()
@@ -202,7 +212,6 @@ def get_tenant_by_chat_id_db(chat_id: int) -> dict | None:
         "parking_slots": row[7],
         "chat_id": row[8],
     }
-
 
 def get_tenants_db(limit: int = 200, search: str | None = None) -> list:
     conn = get_connection()
@@ -251,7 +260,6 @@ def get_tenants_db(limit: int = 200, search: str | None = None) -> list:
         )
     return tenants
 
-
 def update_tenant_db(
     tenant_id: int,
     name: str,
@@ -294,12 +302,15 @@ def update_tenant_db(
     conn.close()
     # ─────────── Tickets helpers ───────────
 
+# ─────────── Ticket helpers ───────────
+
 def create_ticket_db(
     chat_id: int,
     category: str,
     description: str,
     language: str,
     status: str = "open",
+    image_url: str | None = None,
 ) -> dict:
     """
     Create a new ticket and return its data as a dict.
@@ -318,10 +329,10 @@ def create_ticket_db(
     cur.execute(
         """
         INSERT INTO tickets (chat_id, category, description, language,
-                             status, created_at, tenant_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+                             status, created_at,image_url, tenant_id)
+        VALUES (?, ?, ?, ?, ?, ?,?, ?)
         """,
-        (chat_id, category, description, language, status, created_at, tenant_id),
+        (chat_id, category, description, language, status, created_at,image_url, tenant_id),
     )
 
     conn.commit()
@@ -329,7 +340,6 @@ def create_ticket_db(
     conn.close()
 
     return get_ticket_by_id_db(ticket_id)
-
 
 def get_tickets_db(limit: int = 100, status: str = None,
                    category: str = None, search: str = None) -> list:
@@ -340,36 +350,52 @@ def get_tickets_db(limit: int = 100, status: str = None,
     cur = conn.cursor()
 
     query = """
-        SELECT id, chat_id, category, description, language,
-               status, created_at, tenant_id
-        FROM tickets
-        WHERE 1=1
+    SELECT
+        t.id,
+        t.chat_id,
+        t.category,
+        t.description,
+        t.language,
+        t.status,
+        t.created_at,
+        t.image_url,
+        tn.id AS tenant_id,
+        tn.name AS tenant_name,
+        tn.apartment AS tenant_apartment
+    FROM tickets t
+    LEFT JOIN tenants tn ON t.chat_id = tn.chat_id
+    WHERE 1=1
     """
     params = []
 
+    # Optional filters
     if status and status != "all":
-        query += " AND status = ?"
+        query += " AND t.status = ?"
         params.append(status)
 
     if category and category != "all":
-        query += " AND category LIKE ?"
-        params.append(f"%{category}%")
+        query += " AND t.category = ?"
+        params.append(category)
 
     if search:
-        query += """
-            AND (
-                description LIKE ?
-                OR category LIKE ?
-                OR CAST(chat_id AS TEXT) LIKE ?
-            )
-        """
         like = f"%{search}%"
+        query += """
+            AND (t.description LIKE ? OR
+                t.category LIKE ? OR
+                CAST(t.chat_id AS TEXT) LIKE ?)
+        """
         params.extend([like, like, like])
 
-    query += " ORDER BY datetime(created_at) DESC LIMIT ?"
+    # ORDER BY must NOT use placeholder
+    query += " ORDER BY datetime(t.created_at) DESC"
+
+    # LIMIT must use a placeholder
+    query += " LIMIT ?"
     params.append(limit)
 
+    # Finally:
     cur.execute(query, params)
+    
     rows = cur.fetchall()
     conn.close()
 
@@ -384,11 +410,14 @@ def get_tickets_db(limit: int = 100, status: str = None,
                 "language": r[4],
                 "status": r[5],
                 "created_at": r[6],
-                "tenant_id": r[7],
+                "image_url": r[7],
+                "tenant_id": r[8],
+                "tenant_name": r[9],
+                "tenant_apartment": r[10],
             }
         )
+    print(tickets)
     return tickets
-
 
 def get_ticket_by_id_db(ticket_id: int) -> dict | None:
     conn = get_connection()
@@ -396,7 +425,7 @@ def get_ticket_by_id_db(ticket_id: int) -> dict | None:
     cur.execute(
         """
         SELECT id, chat_id, category, description, language,
-               status, created_at, tenant_id
+               status, created_at,image_url, tenant_id
         FROM tickets
         WHERE id = ?
         """,
@@ -416,9 +445,9 @@ def get_ticket_by_id_db(ticket_id: int) -> dict | None:
         "language": r[4],
         "status": r[5],
         "created_at": r[6],
-        "tenant_id": r[7],
+        "image_url":r[7],
+        "tenant_id": r[8],
     }
-
 
 def update_ticket_status_db(ticket_id: int, status: str):
     conn = get_connection()
@@ -430,7 +459,6 @@ def update_ticket_status_db(ticket_id: int, status: str):
     conn.commit()
     conn.close()
 
-
 def update_ticket_description_db(ticket_id: int, description: str):
     conn = get_connection()
     cur = conn.cursor()
@@ -440,6 +468,7 @@ def update_ticket_description_db(ticket_id: int, description: str):
     )
 
     #chaid to tenant
+
 def get_tenants_by_apartment_db(apartment: str, only_without_chat: bool = False) -> list:
     """
     Return tenants for a given apartment.
@@ -482,8 +511,7 @@ def get_tenants_by_apartment_db(apartment: str, only_without_chat: bool = False)
         )
     return tenants
 
-
-def link_tenant_chat_db(tenant_id: int, chat_id: int) -> dict | None:
+def link_tenant_chat_db(tenant_id: int, chat_id: int) -> dict | None:    
     """
     Link a Telegram chat_id to a tenant.
     For safety, first clear this chat_id from any other tenant (unique mapping).
@@ -504,5 +532,114 @@ def link_tenant_chat_db(tenant_id: int, chat_id: int) -> dict | None:
 
     return get_tenant_by_id_db(tenant_id)
 
+def get_tickets_for_chat_db(chat_id: int) -> dict:
+    """
+    Return tickets created by this chat_id and tickets the chat_id is watching.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # Tickets created by this user
+    cur.execute(
+        """
+        SELECT id, category, description, status, created_at
+        FROM tickets
+        WHERE chat_id = ?
+        ORDER BY datetime(created_at) DESC
+        """,
+        (chat_id,),
+    )
+    own_rows = cur.fetchall()
+
+    # Tickets the user is watching
+    cur.execute(
+        """
+        SELECT t.id, t.category, t.description, t.status, t.created_at
+        FROM ticket_watchers w
+        JOIN tickets t ON t.id = w.ticket_id
+        WHERE w.chat_id = ?
+        ORDER BY datetime(t.created_at) DESC
+        """,
+        (chat_id,),
+    )
+    watch_rows = cur.fetchall()
+
+    conn.close()
+
+    own = [
+        {
+            "id": r[0],
+            "category": r[1],
+            "description": r[2],
+            "status": r[3],
+            "created_at": r[4],
+        }
+        for r in own_rows
+    ]
+
+    watching = [
+        {
+            "id": r[0],
+            "category": r[1],
+            "description": r[2],
+            "status": r[3],
+            "created_at": r[4],
+        }
+        for r in watch_rows
+    ]
+
+    return {"own": own, "watching": watching}
+
+# ─────────── duplicate ticket helpers ───────────
+
+def find_open_ticket_by_category_db(category: str) -> dict | None:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, chat_id, category, description, language, status, created_at, image_url
+        FROM tickets
+        WHERE status = 'open' AND category = ?
+        ORDER BY datetime(created_at) DESC
+        LIMIT 1
+        """,
+        (category,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "chat_id": row[1],
+        "category": row[2],
+        "description": row[3],
+        "language": row[4],
+        "status": row[5],
+        "created_at": row[6],
+        "image_url": row[7],
+    }
+
+def add_ticket_watcher_db(ticket_id: int, chat_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO ticket_watchers (ticket_id, chat_id)
+        VALUES (?, ?)
+        """,
+        (ticket_id, chat_id),
+    )
     conn.commit()
     conn.close()
+
+def get_ticket_watchers_db(ticket_id: int) -> list[int]:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT chat_id FROM ticket_watchers WHERE ticket_id = ?",
+        (ticket_id,),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [r[0] for r in rows]

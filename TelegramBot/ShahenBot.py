@@ -849,5 +849,13 @@ def main():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(...)
+    import logging
+    import os
+    import asyncio
+
+    logging.basicConfig(
+        level=os.getenv("LOG_LEVEL", "INFO"),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
     asyncio.run(main())

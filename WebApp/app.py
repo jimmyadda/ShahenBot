@@ -67,7 +67,7 @@ def send_telegram_message(chat_id: int, text: str):
 
 @app.route("/")
 def home():
-    return "ShahenBot WebApp API is running", 200
+    return redirect(url_for("admin_dashboard"))
 
 # ───────────────────────────────────────────────
 #   API: GET USER LANGUAGE
@@ -258,8 +258,6 @@ def admin_dashboard():
         category=category,
         search=search,
     )
-    print(tickets, len(tickets))
-
     status_options = [
         ("all", "All"),
         ("open", "Open"),

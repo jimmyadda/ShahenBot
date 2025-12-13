@@ -2,7 +2,11 @@
 from datetime import datetime, timezone
 import sqlite3
 from pathlib import Path
+from datetime import datetime, timezone
+from werkzeug.security import generate_password_hash, check_password_hash
 
+def now_utc_iso():
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 DB_PATH = Path(__file__).with_name("shahenbot.db")
 
 
@@ -65,6 +69,43 @@ def init_db():
         )
         """
     )
+
+    cur.execute(
+    """
+    CREATE TABLE IF NOT EXISTS buildings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        city TEXT,
+        street TEXT NOT NULL,
+        number TEXT NOT NULL,
+        name TEXT,
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT
+    )
+    """
+)
+
+    cur.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_buildings_unique
+        ON buildings (COALESCE(city,''), street, number)
+        """
+    )
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS staff_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL,          -- 'super_admin' | 'building_admin'
+            building_id INTEGER,         -- NULL for super_admin
+            created_at TEXT,
+            FOREIGN KEY(building_id) REFERENCES buildings(id)
+        )
+        """
+    )
+
+
         # In case tickets existed before without tenant_id – add column if missing
     cur.execute("PRAGMA table_info(tickets)")
     cols = [r[1] for r in cur.fetchall()]
@@ -633,7 +674,7 @@ def add_ticket_watcher_db(ticket_id: int, chat_id: int):
     conn.commit()
     conn.close()
 
-def get_ticket_watchers_db(ticket_id: int) -> list[int]:
+def get_ticket_watchers_db(ticket_id: int) -> list[int]:    
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
@@ -643,3 +684,130 @@ def get_ticket_watchers_db(ticket_id: int) -> list[int]:
     rows = cur.fetchall()
     conn.close()
     return [r[0] for r in rows]
+
+# ─────────── Building helpers ───────────
+
+def create_building_db(city: str | None, street: str, number: str, name: str | None = None) -> dict:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO buildings (city, street, number, name, is_active, created_at)
+        VALUES (?, ?, ?, ?, 1, ?)
+        """,
+        (city, street.strip(), str(number).strip(), name, now_utc_iso()),
+    )
+    conn.commit()
+    bid = cur.lastrowid
+    conn.close()
+    return get_building_by_id_db(bid)
+
+def get_building_by_id_db(building_id: int) -> dict | None:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, city, street, number, name, is_active, created_at FROM buildings WHERE id=?",
+        (building_id,),
+    )
+    r = cur.fetchone()
+    conn.close()
+    if not r:
+        return None
+    return {"id": r[0], "city": r[1], "street": r[2], "number": r[3], "name": r[4], "is_active": r[5], "created_at": r[6]}
+
+def list_buildings_db(limit: int = 500, search: str | None = None) -> list[dict]:
+    conn = get_connection()
+    cur = conn.cursor()
+    q = """
+      SELECT id, city, street, number, name, is_active, created_at
+      FROM buildings
+      WHERE 1=1
+    """
+    params = []
+    if search:
+        like = f"%{search}%"
+        q += " AND (street LIKE ? OR number LIKE ? OR COALESCE(city,'') LIKE ? OR COALESCE(name,'') LIKE ?)"
+        params += [like, like, like, like]
+    q += " ORDER BY street, number LIMIT ?"
+    params.append(limit)
+    cur.execute(q, params)
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {"id": r[0], "city": r[1], "street": r[2], "number": r[3], "name": r[4], "is_active": r[5], "created_at": r[6]}
+        for r in rows
+    ]
+
+
+# ─────────── Staff helpers ───────────
+
+def create_staff_user_db(username: str, password: str, role: str, building_id: int | None) -> dict:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO staff_users (username, password_hash, role, building_id, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (username.strip().lower(), generate_password_hash(password), role, building_id, now_utc_iso()),
+    )
+    conn.commit()
+    uid = cur.lastrowid
+    conn.close()
+    return get_staff_user_by_id_db(uid)
+
+def get_staff_user_by_username_db(username: str) -> dict | None:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, username, password_hash, role, building_id FROM staff_users WHERE username=?",
+        (username.strip().lower(),),
+    )
+    r = cur.fetchone()
+    conn.close()
+    if not r:
+        return None
+    return {"id": r[0], "username": r[1], "password_hash": r[2], "role": r[3], "building_id": r[4]}
+
+def get_staff_user_by_id_db(user_id: int) -> dict | None:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, username, password_hash, role, building_id FROM staff_users WHERE id=?", (user_id,))
+    r = cur.fetchone()
+    conn.close()
+    if not r:
+        return None
+    return {"id": r[0], "username": r[1], "password_hash": r[2], "role": r[3], "building_id": r[4]}
+
+def verify_staff_password(user: dict, password: str) -> bool:
+    return check_password_hash(user["password_hash"], password)
+
+def list_staff_users_db(limit: int = 200) -> list[dict]:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT u.id, u.username, u.role, u.building_id,
+               b.street, b.number, COALESCE(b.city,''), COALESCE(b.name,'')
+        FROM staff_users u
+        LEFT JOIN buildings b ON b.id = u.building_id
+        ORDER BY u.role, u.username
+        LIMIT ?
+        """,
+        (limit,),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "id": r[0],
+            "username": r[1],
+            "role": r[2],
+            "building_id": r[3],
+            "building_street": r[4],
+            "building_number": r[5],
+            "building_city": r[6],
+            "building_name": r[7],
+        }
+        for r in rows
+    ]

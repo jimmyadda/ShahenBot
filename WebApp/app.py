@@ -1,5 +1,11 @@
 # WebApp/app.py
 import os
+from flask import session, abort
+from dotenv import load_dotenv
+import requests
+import uuid
+from werkzeug.utils import secure_filename
+
 from flask import (
     Flask,
     jsonify,
@@ -8,10 +14,6 @@ from flask import (
     redirect,
     url_for,
 )
-from dotenv import load_dotenv
-import requests
-import uuid
-from werkzeug.utils import secure_filename
 from shahenbot_db import (
     init_db,
     get_user_language_db,
@@ -24,13 +26,21 @@ from shahenbot_db import (
     get_tenants_db,
     create_tenant_db,
     update_tenant_db,
-    get_tenants_by_apartment_db,    # NEW
-    get_tenant_by_chat_id_db,       # already exists
+    get_tenants_by_apartment_db,
+    get_tenant_by_chat_id_db,       
     link_tenant_chat_db,
     find_open_ticket_by_category_db,
     add_ticket_watcher_db,              
     get_ticket_watchers_db,
-    get_tickets_for_chat_db   
+    get_tickets_for_chat_db,
+    create_building_db,
+    list_buildings_db,
+    get_building_by_id_db,
+    create_staff_user_db,
+    get_staff_user_by_username_db,
+    get_staff_user_by_id_db,
+    verify_staff_password,
+    list_staff_users_db,  
 )
 
 
@@ -44,8 +54,26 @@ TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 # Initialize Flask app
 app = Flask(__name__)
 
+app.secret_key = os.getenv("FLASK_SECRET", "change_me_please")
+
+
 # Initialize DB tables on startup
 init_db()
+
+def ensure_super_admin():
+    username = os.getenv("SUPERADMIN_USER")
+    password = os.getenv("SUPERADMIN_PASS")
+    if not username or not password:
+        return
+
+    existing = get_staff_user_by_username_db(username)
+    if not existing:
+        create_staff_user_db(username, password, "super_admin", None)
+
+# call after init_db()
+init_db()
+ensure_super_admin()
+
 
 def send_telegram_message(chat_id: int, text: str):
     if not BOT_TOKEN:
@@ -63,6 +91,51 @@ def send_telegram_message(chat_id: int, text: str):
         print("Telegram sendMessage exception:", e)
 
 
+# User Helper
+def current_user():
+    uid = session.get("staff_user_id")
+    return get_staff_user_by_id_db(uid) if uid else None
+
+def require_login():
+    u = current_user()
+    if not u:
+        return redirect(url_for("login"))
+    return u
+
+def require_super_admin():
+    u = require_login()
+    if not isinstance(u, dict):
+        return u
+    if u["role"] != "super_admin":
+        abort(403)
+    return u
+
+def scoped_building_id(u: dict) -> int | None:
+    # super admin sees all buildings (None = no filter)
+    return None if u["role"] == "super_admin" else u["building_id"]
+
+@app.get("/login")
+def login():
+    if current_user():
+        return redirect(url_for("admin_dashboard"))
+    return render_template("login.html", error=None)
+
+@app.post("/login")
+def login_post():
+    username = request.form.get("username", "")
+    password = request.form.get("password", "")
+
+    user = get_staff_user_by_username_db(username)
+    if not user or not verify_staff_password(user, password):
+        return render_template("login.html", error="Invalid username or password")
+
+    session["staff_user_id"] = user["id"]
+    return redirect(url_for("admin_dashboard"))
+
+@app.get("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 
 @app.route("/")
@@ -244,34 +317,24 @@ def api_upload_image():
 # ───────────────────────────────────────────────
 @app.get("/admin")
 def admin_dashboard():
-    status = request.args.get("status", "all")
-    category = request.args.get("category", "all")
-    search = request.args.get("search", "").strip()
-    try:
-        limit = int(request.args.get("limit", 50))
-    except ValueError:
-        limit = 50
+    u = require_login()
+    if not isinstance(u, dict):
+        return u
+
+    status = request.args.get("status") or ""
+    category = request.args.get("category") or ""
+    search = request.args.get("search") or ""
+    limit = int(request.args.get("limit") or "100")
+
+    building_filter = scoped_building_id(u)
 
     tickets = get_tickets_db(
         limit=limit,
-        status=status,
-        category=category,
-        search=search,
+        status=status if status else None,
+        category=category if category else None,
+        search=search if search else None,
+        building_id=building_filter,   # <-- add this param in DB func (Step 2 may adjust)
     )
-    status_options = [
-        ("all", "All"),
-        ("open", "Open"),
-        ("in_progress", "In progress"),
-        ("closed", "Closed"),
-    ]
-
-    category_options = [
-        ("all", "All"),
-        ("חניה", "חניה"),
-        ("מעלית", "מעלית"),
-        ("מים", "מים/ביוב"),
-        ("רעש", "רעש"),
-    ]
 
     return render_template(
         "admin.html",
@@ -280,10 +343,9 @@ def admin_dashboard():
         category=category,
         search=search,
         limit=limit,
-        status_options=status_options,
-        category_options=category_options,
+        # useful for showing user info in header:
+        current_user=u,
     )
-
 
 # ───────────────────────────────────────────────
 #   ADMIN: UPDATE TICKET STATUS + Telegram notify
@@ -433,6 +495,75 @@ def api_link_tenant_chat(tenant_id: int):
         return jsonify({"error": "tenant_not_found"}), 404
 
     return jsonify(tenant), 200
+
+# super admin   
+@app.get("/admin/buildings")
+def admin_buildings():
+    u = require_super_admin()
+    if not isinstance(u, dict):
+        return u
+
+    q = request.args.get("q") or ""
+    buildings = list_buildings_db(search=q if q else None)
+    return render_template("buildings.html", buildings=buildings, q=q, current_user=u)
+
+@app.post("/admin/buildings")
+def admin_buildings_create():
+    u = require_super_admin()
+    if not isinstance(u, dict):
+        return u
+
+    city = request.form.get("city") or None
+    street = request.form.get("street") or ""
+    number = request.form.get("number") or ""
+    name = request.form.get("name") or None
+
+    if not street.strip() or not number.strip():
+        return redirect(url_for("admin_buildings"))
+
+    create_building_db(city, street, number, name)
+    return redirect(url_for("admin_buildings"))
+# Building staff 
+@app.get("/admin/staff")
+def admin_staff():
+    u = require_super_admin()
+    if not isinstance(u, dict):
+        return u
+
+    staff = list_staff_users_db()
+    buildings = list_buildings_db(limit=500)
+    return render_template("staff.html", staff=staff, buildings=buildings, current_user=u, error=None)
+
+@app.post("/admin/staff")
+def admin_staff_create():
+    u = require_super_admin()
+    if not isinstance(u, dict):
+        return u
+
+    username = (request.form.get("username") or "").strip()
+    password = (request.form.get("password") or "").strip()
+    role = request.form.get("role") or "building_admin"
+    building_id = request.form.get("building_id")
+
+    buildings = list_buildings_db(limit=500)
+    staff = list_staff_users_db()
+
+    if not username or not password:
+        return render_template("staff.html", staff=staff, buildings=buildings, current_user=u, error="Missing username/password")
+
+    if role == "building_admin":
+        if not building_id:
+            return render_template("staff.html", staff=staff, buildings=buildings, current_user=u, error="building_id required for building_admin")
+        building_id = int(building_id)
+    else:
+        building_id = None
+
+    try:
+        create_staff_user_db(username, password, role, building_id)
+    except Exception:
+        return render_template("staff.html", staff=staff, buildings=buildings, current_user=u, error="Username already exists or invalid")
+
+    return redirect(url_for("admin_staff"))
 
 """ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001, debug=True) """

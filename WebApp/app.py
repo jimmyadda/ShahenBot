@@ -1,5 +1,7 @@
 # WebApp/app.py
+import logging
 import os
+import sqlite3
 from flask import session, abort
 from dotenv import load_dotenv
 import requests
@@ -594,10 +596,30 @@ def admin_staff_create():
     else:
         building_id = None
 
+
+    logger = logging.getLogger(__name__)
+
     try:
         create_staff_user_db(username, password, role, building_id)
-    except Exception:
-        return render_template("staff.html", staff=staff, buildings=buildings, current_user=u, error="Username already exists or invalid")
+    except sqlite3.IntegrityError as e:
+        # UNIQUE constraint failed: staff_users.username
+        logger.exception("Staff create integrity error")
+        return render_template(
+            "staff.html",
+            staff=staff,
+            buildings=buildings,
+            current_user=u,
+            error=f"Username already exists: {username}",
+        )
+    except Exception as e:
+        logger.exception("Staff create unexpected error")
+        return render_template(
+            "staff.html",
+            staff=staff,
+            buildings=buildings,
+            current_user=u,
+            error=f"Error: {type(e).__name__}: {e}",
+        )
 
     return redirect(url_for("admin_staff"))
 

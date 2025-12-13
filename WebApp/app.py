@@ -579,7 +579,8 @@ def admin_staff_create():
     password = (request.form.get("password") or "").strip()
     role = request.form.get("role") or "building_admin"
     building_id = request.form.get("building_id")
-
+    print(username,password,building_id)
+    
     buildings = list_buildings_db(limit=500)
     staff = list_staff_users_db()
 

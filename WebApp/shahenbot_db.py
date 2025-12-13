@@ -752,6 +752,33 @@ def list_buildings_db(limit: int = 500, search: str | None = None) -> list[dict]
         for r in rows
     ]
 
+def update_building_db(building_id: int, city: str | None, street: str, number: str, name: str | None, is_active: int = 1) -> dict | None:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE buildings
+        SET city = ?,
+            street = ?,
+            number = ?,
+            name = ?,
+            is_active = ?
+        WHERE id = ?
+        """,
+        (city, street.strip(), str(number).strip(), name, int(is_active), building_id),
+    )
+    conn.commit()
+    conn.close()
+    return get_building_by_id_db(building_id)
+
+def deactivate_building_db(building_id: int) -> bool:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE buildings SET is_active = 0 WHERE id = ?", (building_id,))
+    conn.commit()
+    ok = cur.rowcount > 0
+    conn.close()
+    return ok
 
 # ─────────── Staff helpers ───────────
 

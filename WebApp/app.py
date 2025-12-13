@@ -40,7 +40,8 @@ from shahenbot_db import (
     get_staff_user_by_username_db,
     get_staff_user_by_id_db,
     verify_staff_password,
-    list_staff_users_db,  
+    list_staff_users_db,
+    update_building_db, deactivate_building_db  
 )
 
 
@@ -523,6 +524,40 @@ def admin_buildings_create():
 
     create_building_db(city, street, number, name)
     return redirect(url_for("admin_buildings"))
+
+@app.post("/admin/buildings/<int:building_id>/update")
+def admin_buildings_update(building_id: int):
+    u = require_super_admin()
+    if not isinstance(u, dict):
+        return u
+
+    city = request.form.get("city") or None
+    street = (request.form.get("street") or "").strip()
+    number = (request.form.get("number") or "").strip()
+    name = request.form.get("name") or None
+    is_active = 1 if request.form.get("is_active") == "1" else 0
+
+    if not street or not number:
+        return redirect(url_for("admin_buildings"))
+
+    try:
+        update_building_db(building_id, city, street, number, name, is_active=is_active)
+    except Exception:
+        # Most likely UNIQUE constraint conflict (same city/street/number already exists)
+        return redirect(url_for("admin_buildings"))
+
+    return redirect(url_for("admin_buildings"))
+
+@app.post("/admin/buildings/<int:building_id>/delete")
+def admin_buildings_delete(building_id: int):
+    u = require_super_admin()
+    if not isinstance(u, dict):
+        return u
+
+    deactivate_building_db(building_id)
+    return redirect(url_for("admin_buildings"))
+
+
 # Building staff 
 @app.get("/admin/staff")
 def admin_staff():

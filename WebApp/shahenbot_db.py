@@ -382,13 +382,24 @@ def create_ticket_db(
 
     return get_ticket_by_id_db(ticket_id)
 
-def get_tickets_db(limit: int = 100, status: str = None,
-                   category: str = None, search: str = None) -> list:
+def get_tickets_db(
+    limit: int = 100,
+    status: str = None,
+    category: str = None,
+    search: str = None,
+    building_id: int | None = None,
+) -> list:
     """
     Return a list of tickets with optional filters.
+    If building_id column does not exist yet, building filter is ignored (Step 1 safe).
     """
     conn = get_connection()
     cur = conn.cursor()
+
+    # Detect if tickets table already has building_id column (Step 1 safe)
+    cur.execute("PRAGMA table_info(tickets)")
+    cols = {row[1] for row in cur.fetchall()}
+    has_building_id = "building_id" in cols
 
     query = """
     SELECT
@@ -409,6 +420,11 @@ def get_tickets_db(limit: int = 100, status: str = None,
     """
     params = []
 
+    # Optional building filter (only if column exists)
+    if building_id is not None and has_building_id:
+        query += " AND t.building_id = ?"
+        params.append(building_id)
+
     # Optional filters
     if status and status != "all":
         query += " AND t.status = ?"
@@ -421,22 +437,21 @@ def get_tickets_db(limit: int = 100, status: str = None,
     if search:
         like = f"%{search}%"
         query += """
-            AND (t.description LIKE ? OR
+            AND (
+                t.description LIKE ? OR
                 t.category LIKE ? OR
-                CAST(t.chat_id AS TEXT) LIKE ?)
+                CAST(t.chat_id AS TEXT) LIKE ? OR
+                COALESCE(tn.name,'') LIKE ? OR
+                COALESCE(tn.apartment,'') LIKE ?
+            )
         """
-        params.extend([like, like, like])
+        params.extend([like, like, like, like, like])
 
-    # ORDER BY must NOT use placeholder
     query += " ORDER BY datetime(t.created_at) DESC"
-
-    # LIMIT must use a placeholder
     query += " LIMIT ?"
     params.append(limit)
 
-    # Finally:
     cur.execute(query, params)
-    
     rows = cur.fetchall()
     conn.close()
 
@@ -457,7 +472,6 @@ def get_tickets_db(limit: int = 100, status: str = None,
                 "tenant_apartment": r[10],
             }
         )
-    print(tickets)
     return tickets
 
 def get_ticket_by_id_db(ticket_id: int) -> dict | None:

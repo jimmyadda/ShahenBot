@@ -625,13 +625,16 @@ def admin_staff_create():
 
     return redirect(url_for("admin_staff"))
 
-@app.post("/admin/migrate/backfill_building")
-def admin_backfill_building():
+@app.get("/admin/migrate/backfill_building")
+def admin_backfill_building_get():
     u = require_super_admin()
     if not isinstance(u, dict):
         return u
 
-    building_id = int(request.form.get("building_id"))
+    building_id = request.args.get("building_id", type=int)
+    if not building_id:
+        return "Missing building_id. Example: /admin/migrate/backfill_building?building_id=1", 400
+
     backfill_building_ids_db(building_id)
     return redirect(url_for("admin_dashboard"))
 

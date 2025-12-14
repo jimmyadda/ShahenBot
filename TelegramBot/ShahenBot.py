@@ -23,6 +23,7 @@ if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN not found in .env file")
 
 API_BASE_URL = os.getenv("SHAHEN_API_URL", "http://localhost:5001")
+DISABLE_POLLING = os.getenv("DISABLE_POLLING", "").lower() == "true"
 
 # ───────────── Logging ─────────────
 logging.basicConfig(
@@ -831,7 +832,12 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode="Markdown")
 
 
-def main():
+async def main():
+    if DISABLE_POLLING:
+        logging.warning("🚫 Telegram polling is DISABLED (DISABLE_POLLING=true)")
+        await asyncio.Event().wait()   # keep process alive, no polling
+        return
+    
     load_messages()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
@@ -849,10 +855,7 @@ def main():
 
 
 if __name__ == "__main__":
-    import logging
-    import os
-    import asyncio
-
+    
     logging.basicConfig(
         level=os.getenv("LOG_LEVEL", "INFO"),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",

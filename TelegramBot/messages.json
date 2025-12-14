@@ -47,7 +47,12 @@
   "dup_need_register": "כדי לעקוב אחרי דיווח, צריך קודם להירשם לדירה.\nלחץ/י על הכפתור למטה 🔑",
     "mytickets_none": "אין לך דיווחים פתוחים או במעקב.",
   "mytickets_yours": "📝 הדיווחים שפתחת:",
-  "mytickets_watching": "👀 דיווחים שאת/ה במעקב אחריהם:"
+  "mytickets_watching": "👀 דיווחים שאת/ה במעקב אחריהם:",
+    "register_ask_street": "מה שם הרחוב?",
+  "register_ask_building_number": "מה מספר הבניין?",
+  "register_ask_apartment": "מה מספר הדירה?",
+  "register_building_not_found": "לא מצאתי את הבניין: {street} {number}. פנה לוועד/אדמין כדי להוסיף אותו.",
+  "must_register_first": "עליך להירשם קודם"
   },
   "en": {
     "start": "Hi 👋 I'm the building assistant bot.\nChoose language and then you can report a problem.",
@@ -97,7 +102,12 @@
   "dup_need_register": "To follow a ticket, you must register your apartment first.\nTap the Register button below 🔑",
     "mytickets_none": "You have no open or watched tickets.",
   "mytickets_yours": "📝 Tickets you opened:",
-  "mytickets_watching": "👀 Tickets you are watching:"
+  "mytickets_watching": "👀 Tickets you are watching:",
+    "register_ask_street": "What is the street name?",
+  "register_ask_building_number": "What is the building number?",
+  "register_ask_apartment": "What is the apartment number?",
+  "register_building_not_found": "I couldn't find the building: {street} {number}. Please contact the building manager or admin to add it.",
+  "must_register_first": "You must register first"
 
   },
   "fr": {
@@ -148,8 +158,11 @@
   "dup_need_register": "Pour suivre un ticket, vous devez d’abord enregistrer votre appartement.\nAppuyez sur le bouton ci-dessous 🔑",
     "mytickets_none": "Vous n’avez aucun ticket ouvert ou suivi.",
   "mytickets_yours": "📝 Vos tickets ouverts :",
-  "mytickets_watching": "👀 Tickets que vous suivez :"
-
-
+  "mytickets_watching": "👀 Tickets que vous suivez :",
+  "register_ask_street": "Quel est le nom de la rue ?",
+  "register_ask_building_number": "Quel est le numéro de l’immeuble ?",
+  "register_ask_apartment": "Quel est le numéro de l’appartement ?",
+  "register_building_not_found": "Je n’ai pas trouvé l’immeuble : {street} {number}. Veuillez contacter le syndic ou l’administrateur pour l’ajouter.",
+"must_register_first": "Veuillez d’abord vous inscrire"
   }
 }

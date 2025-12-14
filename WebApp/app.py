@@ -17,8 +17,10 @@ from flask import (
     url_for,
 )
 from shahenbot_db import (
+    get_tenants_by_building_apartment_db,
     init_db,
     get_user_language_db,
+    resolve_building_by_street_number_db,
     set_user_language_db,
     create_ticket_db,
     get_tickets_db,
@@ -205,19 +207,18 @@ def api_create_ticket():
 
     return jsonify(ticket), 201
 
-@app.post("/api/tickets/check_duplicate")
+@app.get("/api/tickets/check_duplicate")
 def api_check_duplicate():
-    data = request.get_json(silent=True) or {}
-    category = data.get("category")
+    building_id = request.args.get("building_id", type=int)
+    category = request.args.get("category", type=str)
 
-    if not category:
-        return jsonify({"error": "missing_category"}), 400
+    if not building_id or not category:
+        return jsonify({"error": "missing_fields"}), 400
 
-    ticket = find_open_ticket_by_category_db(category)
-    if not ticket:
-        return jsonify({"duplicate": False})
-
-    return jsonify({"duplicate": True, "ticket": ticket})
+    t = find_open_ticket_by_category_db(building_id, category)
+    if t:
+        return jsonify({"duplicate": True, "ticket": t}), 200
+    return jsonify({"duplicate": False, "ticket": None}), 200
 
 @app.post("/api/tickets/<int:ticket_id>/watchers")
 def api_add_ticket_watcher(ticket_id: int):
@@ -233,6 +234,7 @@ def api_add_ticket_watcher(ticket_id: int):
 
     add_ticket_watcher_db(ticket_id, chat_id)
     return jsonify({"ok": True})
+
 # ───────────────────────────────────────────────
 #   API: LIST TICKETS
 # ───────────────────────────────────────────────
@@ -391,7 +393,6 @@ def admin_update_status(ticket_id):
 
     return redirect(url_for("admin_dashboard"))
 
-
 # ───────────────────────────────────────────────
 #   ADMIN: TENANTS LIST + EDIT
 # ───────────────────────────────────────────────
@@ -482,10 +483,8 @@ def api_tenants_by_apartment(apartment: str):
 
 @app.get("/api/tenants/by_chat/<int:chat_id>")
 def api_tenant_by_chat(chat_id: int):
-    tenant = get_tenant_by_chat_id_db(chat_id)
-    if not tenant:
-        return jsonify({"error": "not_found"}), 404
-    return jsonify(tenant)
+    t = get_tenant_by_chat_id_db(chat_id)
+    return jsonify({"tenant": t}), 200
 
 @app.post("/api/tenants/<int:tenant_id>/link_chat")
 def api_link_tenant_chat(tenant_id: int):
@@ -560,7 +559,6 @@ def admin_buildings_delete(building_id: int):
 
     deactivate_building_db(building_id)
     return redirect(url_for("admin_buildings"))
-
 
 # Building staff 
 @app.get("/admin/staff")
@@ -637,6 +635,40 @@ def admin_backfill_building_get():
 
     backfill_building_ids_db(building_id)
     return redirect(url_for("admin_dashboard"))
+
+@app.route("/api/buildings/resolve", methods=["POST"])
+def api_resolve_building_route():
+    data = request.get_json(silent=True) or {}
+
+    street = data.get("street")
+    number = data.get("number")
+
+    if not street or not number:
+        return jsonify({"error": "missing_fields"}), 400
+
+    building = resolve_building_by_street_number_db(street, number)
+
+    if not building:
+        return jsonify({"error": "not_found"}), 404
+
+    return jsonify(building), 200
+
+@app.route("/api/tenants/by_building_apartment", methods=["GET"])
+def api_tenants_by_building_apartment():
+    building_id = request.args.get("building_id", type=int)
+    apartment = request.args.get("apartment", "")
+    only_without_chat = request.args.get("only_without_chat", "1") == "1"
+
+    if not building_id or not str(apartment).strip():
+        return jsonify({"error": "missing_fields"}), 400
+
+    tenants = get_tenants_by_building_apartment_db(
+        building_id=building_id,
+        apartment=apartment,
+        only_without_chat=only_without_chat,
+    )
+
+    return jsonify({"tenants": tenants}), 200
 
 """ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001, debug=True) """

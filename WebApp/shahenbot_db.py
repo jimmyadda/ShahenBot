@@ -228,33 +228,34 @@ def get_tenant_by_id_db(tenant_id: int) -> dict | None:
     }
 
 def get_tenant_by_chat_id_db(chat_id: int) -> dict | None:
+    # Treat 0/None as not registered
+    if not chat_id or int(chat_id) <= 0:
+        return None
+
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT id, name, apartment, tenant_type, email,
-               payment_type, next_payment_date, parking_slots, chat_id
+        SELECT id, building_id, name, apartment, tenant_type, email, payment_type,
+               next_payment_date, parking_slots, chat_id
         FROM tenants
         WHERE chat_id = ?
         """,
         (chat_id,),
     )
-    row = cur.fetchone()
+    r = cur.fetchone()
     conn.close()
+    if not r:
+        return None
 
-    if not row:
+    # building_id must be valid
+    if not r[1] or int(r[1]) <= 0:
         return None
 
     return {
-        "id": row[0],
-        "name": row[1],
-        "apartment": row[2],
-        "tenant_type": row[3],
-        "email": row[4],
-        "payment_type": row[5],
-        "next_payment_date": row[6],
-        "parking_slots": row[7],
-        "chat_id": row[8],
+        "id": r[0], "building_id": r[1], "name": r[2], "apartment": r[3],
+        "tenant_type": r[4], "email": r[5], "payment_type": r[6],
+        "next_payment_date": r[7], "parking_slots": r[8], "chat_id": r[9],
     }
 
 def get_tenants_db(limit: int = 200, search: str | None = None) -> list:
@@ -348,42 +349,29 @@ def update_tenant_db(
 
 # ─────────── Ticket helpers ───────────
 
-def create_ticket_db(
-    chat_id: int,
-    category: str,
-    description: str,
-    language: str,
-    status: str = "open",
-    image_url: str | None = None,
-) -> dict:
-    """
-    Create a new ticket and return its data as a dict.
-    If tenant exists with same chat_id, link tenant_id.
-    """
+def create_ticket_db(chat_id: int, category: str, description: str, language: str = "he", image_url: str | None = None) -> dict:
+    tenant = get_tenant_by_chat_id_db(chat_id)
+    if not tenant:
+        raise ValueError("not_registered")
+
+    building_id = int(tenant["building_id"])
+    if building_id <= 0:
+        raise ValueError("not_registered")
+
     conn = get_connection()
     cur = conn.cursor()
-
-    created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-    # Find tenant by chat_id if exists
-    cur.execute("SELECT id FROM tenants WHERE chat_id = ?", (chat_id,))
-    trow = cur.fetchone()
-    tenant_id = trow[0] if trow else None
-
+    created_at = now_utc_iso()
     cur.execute(
         """
-        INSERT INTO tickets (chat_id, category, description, language,
-                             status, created_at,image_url, tenant_id)
-        VALUES (?, ?, ?, ?, ?, ?,?, ?)
+        INSERT INTO tickets (building_id, chat_id, category, description, language, status, created_at, image_url)
+        VALUES (?, ?, ?, ?, ?, 'open', ?, ?)
         """,
-        (chat_id, category, description, language, status, created_at,image_url, tenant_id),
+        (building_id, chat_id, category, description, language, created_at, image_url),
     )
-
     conn.commit()
-    ticket_id = cur.lastrowid
+    tid = cur.lastrowid
     conn.close()
-
-    return get_ticket_by_id_db(ticket_id)
+    return get_ticket_by_id_db(tid)
 
 def get_tickets_db(
     limit: int = 100,
@@ -462,7 +450,6 @@ def get_tickets_db(
         }
         for r in rows
     ]
-
 
 def get_ticket_by_id_db(ticket_id: int) -> dict | None:
     conn = get_connection()
@@ -637,32 +624,34 @@ def get_tickets_for_chat_db(chat_id: int) -> dict:
 
 # ─────────── duplicate ticket helpers ───────────
 
-def find_open_ticket_by_category_db(category: str) -> dict | None:
+def find_open_ticket_by_category_db(building_id: int, category: str) -> dict | None:
+    if not building_id or int(building_id) <= 0:
+        return None
+
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT id, chat_id, category, description, language, status, created_at, image_url
+        SELECT id, building_id, chat_id, category, description, status, created_at
         FROM tickets
-        WHERE status = 'open' AND category = ?
+        WHERE building_id=? AND status='open' AND category=?
         ORDER BY datetime(created_at) DESC
         LIMIT 1
         """,
-        (category,),
+        (building_id, category),
     )
-    row = cur.fetchone()
+    r = cur.fetchone()
     conn.close()
-    if not row:
+    if not r:
         return None
     return {
-        "id": row[0],
-        "chat_id": row[1],
-        "category": row[2],
-        "description": row[3],
-        "language": row[4],
-        "status": row[5],
-        "created_at": row[6],
-        "image_url": row[7],
+        "id": r[0],
+        "building_id": r[1],
+        "chat_id": r[2],
+        "category": r[3],
+        "description": r[4],
+        "status": r[5],
+        "created_at": r[6],
     }
 
 def add_ticket_watcher_db(ticket_id: int, chat_id: int):
@@ -794,6 +783,78 @@ def backfill_building_ids_db(default_building_id: int):
 
     conn.commit()
     conn.close()
+
+def resolve_building_by_street_number_db(street: str, number: str) -> dict | None:
+    street = (street or "").strip()
+    number = (number or "").strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, city, street, number, name, is_active, created_at
+        FROM buildings
+        WHERE TRIM(LOWER(street)) = TRIM(LOWER(?))
+          AND TRIM(number) = TRIM(?)
+        LIMIT 1
+        """,
+        (street, number),
+    )
+    r = cur.fetchone()
+    conn.close()
+
+    if not r:
+        return None
+
+    return {
+        "id": r[0],
+        "city": r[1],
+        "street": r[2],
+        "number": r[3],
+        "name": r[4],
+        "is_active": r[5],
+        "created_at": r[6],
+    }
+
+def get_tenants_by_building_apartment_db(
+    building_id: int,
+    apartment: str,
+    only_without_chat: bool = True,
+) -> list[dict]:
+    apartment = (apartment or "").strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    sql = """
+        SELECT id, name, apartment, tenant_type, email,building_id,chat_id
+        FROM tenants
+        WHERE building_id = ?
+          AND TRIM(apartment) = TRIM(?)
+    """
+    params = [int(building_id), apartment]
+
+    if only_without_chat:
+        sql += " AND (chat_id IS NULL OR chat_id = '')"
+
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    conn.close()
+
+    tenants = []
+    for r in rows:
+        tenants.append({
+            "id": r[0],            
+            "name": r[1],
+            "apartment": r[2],
+            "tenant_type": r[3],
+            "email": r[4],
+            "email": r[5],
+            "building_id": r[6],
+            "chat_id": r[7]
+        })
+
+    return tenants
 
 # ─────────── Staff helpers ───────────
 

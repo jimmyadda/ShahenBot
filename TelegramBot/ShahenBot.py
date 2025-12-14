@@ -1,10 +1,12 @@
 import asyncio
+from datetime import time
 import logging
 import os
 import json
 from pathlib import Path
 import io
 from dotenv import load_dotenv
+import httpx
 import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -43,7 +45,6 @@ def load_messages():
         raise FileNotFoundError(f"messages.json not found at {path}")
     with path.open(encoding="utf-8") as f:
         MESSAGES = json.load(f)
-
 
 def get_text(lang: str, key: str) -> str:
     if not MESSAGES:
@@ -154,16 +155,6 @@ def api_update_ticket_description(ticket_id: int, chat_id: int, new_description:
         logger.exception("API update_ticket_description exception: %s", e)
         return {"success": False, "error": "exception"}
 
-def api_get_tenant_by_chat(chat_id: int):
-    try:
-        url = f"{API_BASE_URL}/api/tenants/by_chat/{chat_id}"
-        resp = requests.get(url, timeout=5)
-        if resp.ok:
-            return resp.json()
-    except Exception as e:
-        logger.exception("API get_tenant_by_chat exception: %s", e)
-    return None
-
 def api_get_tenants_by_apartment(apartment: str, only_without_chat: bool = True):
     try:
         url = f"{API_BASE_URL}/api/tenants/by_apartment/{apartment}"
@@ -192,15 +183,14 @@ def api_link_tenant_chat(tenant_id: int, chat_id: int):
         logger.exception("API link_tenant_chat exception: %s", e)
     return None
 
-def api_check_duplicate(category: str):
-    try:
-        url = f"{API_BASE_URL}/api/tickets/check_duplicate"
-        resp = requests.post(url, json={"category": category}, timeout=5)
-        if resp.ok:
-            return resp.json()
-    except Exception as e:
-        logger.exception("API check_duplicate exception: %s", e)
-    return {"duplicate": False}
+def api_check_duplicate(building_id: int, category: str):
+    r = httpx.get(
+        f"{API_BASE_URL}/api/tickets/check_duplicate",
+        params={"building_id": building_id, "category": category},
+        timeout=10,
+    )
+    r.raise_for_status()
+    return r.json()
 
 def api_add_ticket_watcher(ticket_id: int, chat_id: int):
     try:
@@ -217,6 +207,11 @@ def api_add_ticket_watcher(ticket_id: int, chat_id: int):
         logger.exception("API add_ticket_watcher exception: %s", e)
         return {"success": False, "error": "exception"}
 
+def api_get_tenant_by_chat_id(chat_id: int):
+    r = httpx.get(f"{API_BASE_URL}/api/tenants/by_chat/{chat_id}", timeout=10)
+    r.raise_for_status()
+    return (r.json() or {}).get("tenant")
+
 def api_get_my_tickets(chat_id: int):
     try:
         url = f"{API_BASE_URL}/api/tickets/by_chat/{chat_id}"
@@ -226,6 +221,30 @@ def api_get_my_tickets(chat_id: int):
     except Exception as e:
         logger.exception("api_get_my_tickets error: %s", e)
     return {"own": [], "watching": []}
+
+def api_resolve_building(street: str, number: str):
+    r = httpx.post(
+        f"{API_BASE_URL}/api/buildings/resolve",
+        json={"street": street, "number": number},
+        timeout=10,
+    )
+    if r.status_code != 200:
+        return None
+    return r.json()
+
+def api_get_tenants_by_building_apartment(building_id: int, apartment: str, only_without_chat: bool = True):
+    r = httpx.get(
+        f"{API_BASE_URL}/api/tenants/by_building_apartment",
+        params={
+            "building_id": building_id,
+            "apartment": apartment,
+            "only_without_chat": "1" if only_without_chat else "0",
+        },
+        timeout=10,
+    )
+    r.raise_for_status()
+    return (r.json() or {}).get("tenants", [])
+
 # ───────────── Keyword-based category detection ─────────────
 
 def detect_category_from_text(text: str, lang: str):
@@ -382,10 +401,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(get_text(lang, "cancelled"))
         return
     
-    # Register button in main menu
-    if data == "register":
-        # simulate /register behavior
-        tenant = api_get_tenant_by_chat(chat_id)
+    if data in ("register", "go_register"):
+        tenant = api_get_tenant_by_chat_id(chat_id)
         if tenant:
             txt = get_text(lang, "register_already_linked").format(
                 name=tenant.get("name", ""),
@@ -394,8 +411,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(txt)
             return
 
-        context.user_data["awaiting_apartment"] = True
-        await query.edit_message_text(get_text(lang, "register_prompt"))
+        context.user_data.clear()
+        context.user_data["register_step"] = "street"
+        await query.edit_message_text(get_text(lang, "register_ask_street"))
         return
     
         # Duplicate ticket: add watcher?
@@ -499,22 +517,43 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("editing_ticket_id", None)
         return
     
+    # -------- Registration flow (street -> building -> apartment) --------
+    step = context.user_data.get("register_step")
 
-    # /register flow – user just sent apartment number/name
-    if context.user_data.get("awaiting_apartment"):
+    if step == "street":
+        context.user_data["street"] = text.strip()
+        context.user_data["register_step"] = "building_number"
+        await msg.reply_text(get_text(lang, "register_ask_building_number"))
+        return
+
+    if step == "building_number":
+        context.user_data["building_number"] = text.strip()
+        context.user_data["register_step"] = "apartment"
+        await msg.reply_text(get_text(lang, "register_ask_apartment"))
+        return
+
+    if step == "apartment":
+        street = context.user_data.get("street", "").strip()
+        number = context.user_data.get("building_number", "").strip()
         apartment = text.strip()
 
-        tenants = api_get_tenants_by_apartment(apartment, only_without_chat=True)
-
-        # no tenants found
-        if not tenants:
-            await msg.reply_text(
-                get_text(lang, "register_not_found").format(apartment=apartment)
-            )
-            context.user_data.pop("awaiting_apartment", None)
+        # Resolve building first (must exist or be created by admin/superadmin)
+        building = api_resolve_building(street=street, number=number)
+        if not building:
+            await msg.reply_text(get_text(lang, "register_building_not_found").format(street=street, number=number))
+            context.user_data.clear()
             return
 
-        # exactly one tenant – link directly
+        building_id = int(building["id"])
+        logger.info(building_id,apartment)
+        
+        tenants = api_get_tenants_by_building_apartment(building_id, apartment, only_without_chat=True)
+
+        if not tenants:
+            await msg.reply_text(get_text(lang, "register_not_found").format(apartment=apartment))
+            context.user_data.clear()
+            return
+
         if len(tenants) == 1:
             t = tenants[0]
             linked = api_link_tenant_chat(t["id"], chat_id)
@@ -528,11 +567,13 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await msg.reply_text(get_text(lang, "register_link_fail"))
 
-            context.user_data.pop("awaiting_apartment", None)
+            context.user_data.clear()
             return
 
-        # more than one tenant – let user choose
-        context.user_data.pop("awaiting_apartment", None)
+        # More than one tenant (husband/wife/owner) -> choose
+        context.user_data["register_step"] = None
+        context.user_data["reg_building_id"] = building_id
+        context.user_data["reg_apartment"] = apartment
 
         buttons = []
         for t in tenants:
@@ -543,15 +584,15 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 label_parts.append("(" + get_text(lang, "tenant_type_rent_short") + ")")
             label = " ".join(p for p in label_parts if p)
 
-            buttons.append(
-                [InlineKeyboardButton(label, callback_data=f"regtenant_{t['id']}")]
-            )
+            buttons.append([InlineKeyboardButton(label, callback_data=f"regtenant_{t['id']}")])
 
         await msg.reply_text(
             get_text(lang, "register_choose_tenant").format(apartment=apartment),
             reply_markup=InlineKeyboardMarkup(buttons),
         )
         return
+    # -------- End registration flow --------
+
 
     # Manual flow: user chose category via buttons, now sends description
     if "category" in context.user_data:
@@ -596,8 +637,19 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cat_key, cat_label = detect_category_from_text(text, lang)
 
     if cat_key is not None and cat_label is not None:
+     # ✅ Must be registered to do duplicate/watch logic
+        tenant = api_get_tenant_by_chat_id(chat_id)  # returns {id, building_id, name, apartment...} or None
+        logger.info("tenant",tenant)        
+        if not tenant or int(tenant.get("building_id") or 0) <= 0:
+            # Not registered -> do NOT check duplicates / do NOT create ticket
+            text_need_reg = get_text(lang, "must_register_first")
+            keyboard = [[InlineKeyboardButton(get_text(lang, "btn_register"), callback_data="go_register")]]
+            await msg.reply_text(text_need_reg, reply_markup=InlineKeyboardMarkup(keyboard))
+            return
+
+        building_id = int(tenant["building_id"])
         # First check duplicate
-        dup_info = api_check_duplicate(cat_label)
+        dup_info = api_check_duplicate(building_id, cat_label)
         if dup_info.get("duplicate") and dup_info.get("ticket"):
             t = dup_info["ticket"]
             dup_id = t["id"]
@@ -643,7 +695,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
         ]
 
-        tenant = api_get_tenant_by_chat(chat_id)
+        tenant = api_get_tenant_by_chat_id(chat_id)
         if not tenant:
             keyboard_rows.append(
                 [
@@ -832,13 +884,15 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode="Markdown")
 
 
-async def main():
+def main():
     if DISABLE_POLLING:
         logging.warning("🚫 Telegram polling is DISABLED (DISABLE_POLLING=true)")
-        await asyncio.Event().wait()   # keep process alive, no polling
-        return
-    
+        # Keep process alive on Railway free plan
+        while True:
+            time.sleep(3600)
+
     load_messages()
+
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -846,19 +900,17 @@ async def main():
     app.add_handler(CommandHandler("mytickets", mytickets))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
-    app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, photo_handler))   
-    app.add_handler(CommandHandler("help", help_cmd)) 
+    app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, photo_handler))
+    app.add_handler(CommandHandler("help", help_cmd))
     app.add_error_handler(error_handler)
 
     print(f"ShahenBot is running. API base: {API_BASE_URL}")
-    app.run_polling()
+    app.run_polling()   # ✅ NO await
 
 
 if __name__ == "__main__":
-    
     logging.basicConfig(
         level=os.getenv("LOG_LEVEL", "INFO"),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
-
-    asyncio.run(main())
+    main()

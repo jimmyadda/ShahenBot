@@ -43,7 +43,9 @@ from shahenbot_db import (
     get_staff_user_by_id_db,
     verify_staff_password,
     list_staff_users_db,
-    update_building_db, deactivate_building_db  
+    update_building_db, 
+    deactivate_building_db  ,
+    backfill_building_ids_db
 )
 
 
@@ -622,6 +624,16 @@ def admin_staff_create():
         )
 
     return redirect(url_for("admin_staff"))
+
+@app.post("/admin/migrate/backfill_building")
+def admin_backfill_building():
+    u = require_super_admin()
+    if not isinstance(u, dict):
+        return u
+
+    building_id = int(request.form.get("building_id"))
+    backfill_building_ids_db(building_id)
+    return redirect(url_for("admin_dashboard"))
 
 """ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001, debug=True) """

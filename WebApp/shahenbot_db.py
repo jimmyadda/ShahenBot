@@ -114,6 +114,8 @@ def init_db():
     if "image_url" not in cols:
         cur.execute("ALTER TABLE tickets ADD COLUMN image_url TEXT")
 
+    ensure_column(cur, "tickets", "building_id", "INTEGER")
+    ensure_column(cur, "tenants", "building_id", "INTEGER")
     conn.commit()
     conn.close()
 
@@ -156,6 +158,7 @@ def set_user_language_db(chat_id: int, lang: str):
     )
     conn.commit()
     conn.close()
+
 # ─────────── Tenant helpers ───────────
 
 def create_tenant_db(
@@ -389,17 +392,8 @@ def get_tickets_db(
     search: str = None,
     building_id: int | None = None,
 ) -> list:
-    """
-    Return a list of tickets with optional filters.
-    If building_id column does not exist yet, building filter is ignored (Step 1 safe).
-    """
     conn = get_connection()
     cur = conn.cursor()
-
-    # Detect if tickets table already has building_id column (Step 1 safe)
-    cur.execute("PRAGMA table_info(tickets)")
-    cols = {row[1] for row in cur.fetchall()}
-    has_building_id = "building_id" in cols
 
     query = """
     SELECT
@@ -420,12 +414,10 @@ def get_tickets_db(
     """
     params = []
 
-    # Optional building filter (only if column exists)
-    if building_id is not None and has_building_id:
+    if building_id is not None:
         query += " AND t.building_id = ?"
         params.append(building_id)
 
-    # Optional filters
     if status and status != "all":
         query += " AND t.status = ?"
         params.append(status)
@@ -447,32 +439,30 @@ def get_tickets_db(
         """
         params.extend([like, like, like, like, like])
 
-    query += " ORDER BY datetime(t.created_at) DESC"
-    query += " LIMIT ?"
+    query += " ORDER BY datetime(t.created_at) DESC LIMIT ?"
     params.append(limit)
 
     cur.execute(query, params)
     rows = cur.fetchall()
     conn.close()
 
-    tickets = []
-    for r in rows:
-        tickets.append(
-            {
-                "id": r[0],
-                "chat_id": r[1],
-                "category": r[2],
-                "description": r[3],
-                "language": r[4],
-                "status": r[5],
-                "created_at": r[6],
-                "image_url": r[7],
-                "tenant_id": r[8],
-                "tenant_name": r[9],
-                "tenant_apartment": r[10],
-            }
-        )
-    return tickets
+    return [
+        {
+            "id": r[0],
+            "chat_id": r[1],
+            "category": r[2],
+            "description": r[3],
+            "language": r[4],
+            "status": r[5],
+            "created_at": r[6],
+            "image_url": r[7],
+            "tenant_id": r[8],
+            "tenant_name": r[9],
+            "tenant_apartment": r[10],
+        }
+        for r in rows
+    ]
+
 
 def get_ticket_by_id_db(ticket_id: int) -> dict | None:
     conn = get_connection()
@@ -779,6 +769,31 @@ def deactivate_building_db(building_id: int) -> bool:
     ok = cur.rowcount > 0
     conn.close()
     return ok
+
+def ensure_column(cur, table: str, col: str, col_def: str):
+    cur.execute(f"PRAGMA table_info({table})")
+    cols = {r[1] for r in cur.fetchall()}
+    if col not in cols:
+        cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}")
+
+def backfill_building_ids_db(default_building_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # tickets without building_id -> default
+    cur.execute(
+        "UPDATE tickets SET building_id = ? WHERE building_id IS NULL",
+        (default_building_id,),
+    )
+
+    # tenants without building_id -> default
+    cur.execute(
+        "UPDATE tenants SET building_id = ? WHERE building_id IS NULL",
+        (default_building_id,),
+    )
+
+    conn.commit()
+    conn.close()
 
 # ─────────── Staff helpers ───────────
 

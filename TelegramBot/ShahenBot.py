@@ -425,19 +425,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if data in ("register", "go_register"):
         tenant = api_get_tenant_by_chat_id(chat_id)
-        if tenant:
+
+        is_registered = bool(
+            tenant
+            and int(tenant.get("building_id") or 0) > 0
+            and (tenant.get("apartment") or "").strip()
+        )
+
+        if is_registered:
             txt = get_text(lang, "register_already_linked").format(
                 name=tenant.get("name", ""),
                 apartment=tenant.get("apartment") or "",
             )
             await query.edit_message_text(txt)
             return
+        
+        logger.info(tenant,is_registered)
 
+
+        # start full register flow (street -> building -> apartment)
         context.user_data.clear()
         context.user_data["register_step"] = "street"
         await query.edit_message_text(get_text(lang, "register_ask_street"))
         return
-    
+
         # Duplicate ticket: add watcher?
     
     if data == "dup_yes":
@@ -515,7 +526,34 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = chat.id
     lang = api_get_user_language(chat_id)
     chat_type = chat.type
+    #add name to auto register
+    # MUST be first in text_handler
+    if context.user_data.get("awaiting_name"):
+        tenant_id = context.user_data.get("name_tenant_id")
+        name = text.strip()
 
+        ok = api_update_tenant_name(tenant_id, name)
+        if ok:
+            await msg.reply_text(get_text(lang, "register_name_saved").format(name=name))
+        else:
+            await msg.reply_text(get_text(lang, "register_name_save_failed"))
+
+        context.user_data.clear()
+        return   # ✅ REQUIRED
+
+    tenant = api_get_tenant_by_chat_id(chat_id)
+
+    if tenant and int(tenant.get("building_id") or 0) > 0:
+        # registered
+        if not (tenant.get("name") or "").strip() or (tenant.get("name") or "").startswith("New Tenant"):
+            # ask name only if missing/placeholder
+            context.user_data["awaiting_name"] = True
+            context.user_data["name_tenant_id"] = tenant["id"]
+            await msg.reply_text(get_text(lang, "register_success_ask_name"))
+            return
+    else:
+        # not registered -> allow tickets OR force register, your choice
+        pass
     # Editing ticket flow
     if context.user_data.get("awaiting_edit"):
         ticket_id = context.user_data.get("editing_ticket_id")
@@ -538,20 +576,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("awaiting_edit", None)
         context.user_data.pop("editing_ticket_id", None)
         return
-    #add name to auto register
-    if context.user_data.get("awaiting_name"):
-        tenant_id = context.user_data.get("name_tenant_id")
-        name = text.strip()
 
-        ok = api_update_tenant_name(tenant_id, name)
-        if ok:
-            await msg.reply_text(get_text(lang, "register_name_saved").format(name=name))
-        else:
-            await msg.reply_text(get_text(lang, "register_name_save_failed"))
-
-        context.user_data.pop("awaiting_name", None)
-        context.user_data.pop("name_tenant_id", None)
-        return
     # -------- Registration flow (street -> building -> apartment) --------
     step = context.user_data.get("register_step")
 
@@ -689,8 +714,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if cat_key is not None and cat_label is not None:
      # ✅ Must be registered to do duplicate/watch logic
-        tenant = api_get_tenant_by_chat_id(chat_id)  # returns {id, building_id, name, apartment...} or None
-        logger.info("tenant",tenant)        
+        tenant = api_get_tenant_by_chat_id(chat_id)  # returns {id, building_id, name, apartment...} or None     
         if not tenant or int(tenant.get("building_id") or 0) <= 0:
             # Not registered -> do NOT check duplicates / do NOT create ticket
             text_need_reg = get_text(lang, "must_register_first")
@@ -775,22 +799,32 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.error("Error while handling update:", exc_info=context.error)
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.effective_message
     chat_id = update.effective_chat.id
-    lang = api_get_user_language(chat_id)
 
-    # Check if already linked
+    lang = api_get_user_language(chat_id)  # or your existing language getter
+
     tenant = api_get_tenant_by_chat_id(chat_id)
-    if tenant:
+    is_registered = bool(
+        tenant
+        and int(tenant.get("building_id") or 0) > 0
+        and (tenant.get("apartment") or "").strip()
+    )
+
+    if is_registered:
         txt = get_text(lang, "register_already_linked").format(
             name=tenant.get("name", ""),
             apartment=tenant.get("apartment") or "",
         )
-        await update.message.reply_text(txt)
+        await msg.reply_text(txt)
         return
 
-    # Ask for apartment
-    context.user_data["awaiting_apartment"] = True
-    await update.message.reply_text(get_text(lang, "register_prompt"))
+    # ✅ start NEW flow (street -> building -> apartment)
+    context.user_data.clear()
+    context.user_data["register_step"] = "street"
+
+    await msg.reply_text(get_text(lang, "register_ask_street"))
+
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message

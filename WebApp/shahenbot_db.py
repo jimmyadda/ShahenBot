@@ -396,7 +396,7 @@ def get_tenants_summary_db(building_id: int | None = None) -> list[dict]:
 
 # ─────────── Ticket helpers ───────────
 
-def create_ticket_db(chat_id: int, category: str, description: str, language: str = "he", image_url: str | None = None) -> dict:
+def create_ticket_db(chat_id: int, category: str, description: str, language: str = "he", image_url: str | None = None, status="open") -> dict:
     tenant = get_tenant_by_chat_id_db(chat_id)
     if not tenant:
         raise ValueError("not_registered")

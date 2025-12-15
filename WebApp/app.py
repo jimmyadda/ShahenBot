@@ -17,13 +17,17 @@ from flask import (
     url_for,
 )
 from shahenbot_db import (
+    compute_missing_tenant_fields,
     get_tenants_by_building_apartment_db,
+    get_tenants_due_this_month_db,
+    get_tenants_summary_db,
     init_db,
     get_user_language_db,
     resolve_building_by_street_number_db,
     set_user_language_db,
     create_ticket_db,
     get_tickets_db,
+    update_tenant_name_db,
     update_ticket_status_db,
     update_ticket_description_db,
     get_ticket_by_id_db,
@@ -334,6 +338,14 @@ def admin_dashboard():
     limit = int(request.args.get("limit") or "100")
 
     building_filter = scoped_building_id(u)
+    tenants = get_tenants_summary_db(building_filter)
+    due_tenants = get_tenants_due_this_month_db(building_filter)
+    buildings = list_buildings_db()
+    tenants_missing = []
+    for t in tenants:
+        miss = compute_missing_tenant_fields(t)
+        if miss:
+            tenants_missing.append({**t, "missing": miss})
 
     tickets = get_tickets_db(
         limit=limit,
@@ -349,8 +361,11 @@ def admin_dashboard():
         status=status,
         category=category,
         search=search,
+        tenants=tenants,
+        tenants_missing=tenants_missing,
+        due_tenants=due_tenants,
+        buildings=buildings,
         limit=limit,
-        # useful for showing user info in header:
         current_user=u,
     )
 
@@ -400,12 +415,13 @@ def admin_update_status(ticket_id):
 def admin_tenants():
     search = request.args.get("search", "").strip()
     tenants = get_tenants_db(limit=300, search=search)
+    buildings = list_buildings_db()
     return render_template(
         "tenants.html",
         tenants=tenants,
+        buildings =buildings,
         search=search,
     )
-
 
 @app.post("/admin/tenants/add")
 def admin_add_tenant():
@@ -417,6 +433,7 @@ def admin_add_tenant():
     next_payment_date = request.form.get("next_payment_date") or None
     parking = request.form.get("parking_slots", "").strip()
     chat_id = request.form.get("chat_id") or None
+    building_id = int(request.form.get("building_id") or 0)
 
     parking = ",".join(s.strip() for s in parking.split(",") if s.strip())
     chat_id = int(chat_id) if chat_id else None
@@ -432,10 +449,10 @@ def admin_add_tenant():
         payment_type=payment_type,
         next_payment_date=next_payment_date,
         parking_slots=parking,
+        building_id=building_id,
         chat_id=chat_id,
     )
     return redirect(url_for("admin_tenants"))
-
 
 @app.post("/admin/tenants/<int:tenant_id>/update")
 def admin_update_tenant(tenant_id: int):
@@ -446,10 +463,9 @@ def admin_update_tenant(tenant_id: int):
     payment_type = request.form.get("payment_type") or None
     next_payment_date = request.form.get("next_payment_date") or None
     parking_slots = request.form.get("parking_slots") or None
-    chat_id = request.form.get("chat_id") or None
+    building_id = int(request.form.get("building_id") or 0)
 
-    parking_slots = int(parking_slots) if parking_slots else None
-    chat_id = int(chat_id) if chat_id else None
+    parking_slots = parking_slots if parking_slots else None
 
     if not name:
         return redirect(url_for("admin_tenants"))
@@ -463,11 +479,10 @@ def admin_update_tenant(tenant_id: int):
         payment_type=payment_type,
         next_payment_date=next_payment_date,
         parking_slots=parking_slots,
-        chat_id=chat_id,
+        building_id=building_id,
     )
 
-    return redirect(url_for("admin_tenants", **request.args))
-
+    return redirect(url_for("admin_tenants"))
 # ───────────────────────────────────────────────
 #   API: TENANTS CHATID
 # ───────────────────────────────────────────────
@@ -670,9 +685,43 @@ def api_tenants_by_building_apartment():
 
     return jsonify({"tenants": tenants}), 200
 
-""" if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=True) """
+@app.post("/api/tenants/auto_register")
+def api_tenants_auto_register():
+    data = request.json or {}
+    building_id = int(data.get("building_id", 0))
+    apartment = (data.get("apartment") or "").strip()
+    chat_id = int(data.get("chat_id", 0))
 
+    if building_id <= 0 or not apartment or chat_id <= 0:
+        return jsonify({"error": "missing_fields"}), 400
+
+    # Already linked?
+    existing = get_tenant_by_chat_id_db(chat_id)
+    if existing:
+        return jsonify({"tenant": existing}), 200
+
+    # Create new tenant row for this person
+    tenant = create_tenant_db(
+        name=f"New Tenant ({apartment})",
+        apartment=apartment,
+        chat_id=chat_id,
+        building_id=building_id,
+    )
+    return jsonify({"tenant": tenant}), 200
+
+@app.post("/api/tenants/<int:tenant_id>/name")
+def api_update_tenant_name(tenant_id: int):
+    data = request.json or {}
+    name = (data.get("name") or "").strip()
+
+    if not name:
+        return jsonify({"error": "missing_name"}), 400
+
+    ok = update_tenant_name_db(tenant_id, name)
+    if not ok:
+        return jsonify({"error": "not_found"}), 404
+
+    return jsonify({"ok": True}), 200
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5001"))
     app.run(host="0.0.0.0", port=port)    

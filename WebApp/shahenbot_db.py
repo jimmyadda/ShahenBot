@@ -1,5 +1,5 @@
 # shahenbot_db.py
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import sqlite3
 from pathlib import Path
 from datetime import datetime, timezone
@@ -168,8 +168,9 @@ def create_tenant_db(
     email: str = None,
     payment_type: str = None,
     next_payment_date: str = None,
-    parking_slots: str  = None,
+    parking_slots: str = None,
     chat_id: int = None,
+    building_id: int = None,
 ) -> dict:
     conn = get_connection()
     cur = conn.cursor()
@@ -178,8 +179,8 @@ def create_tenant_db(
         """
         INSERT INTO tenants
         (name, apartment, tenant_type, email, payment_type,
-         next_payment_date, parking_slots, chat_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         next_payment_date, parking_slots, chat_id, building_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             name,
@@ -190,6 +191,7 @@ def create_tenant_db(
             next_payment_date,
             parking_slots,
             chat_id,
+            building_id,
         ),
     )
     conn.commit()
@@ -313,8 +315,8 @@ def update_tenant_db(
     email: str,
     payment_type: str,
     next_payment_date: str,
-    parking_slots: str | None,
-    chat_id: int | None,
+    parking_slots: str,
+    building_id: int,
 ):
     conn = get_connection()
     cur = conn.cursor()
@@ -328,7 +330,7 @@ def update_tenant_db(
             payment_type = ?,
             next_payment_date = ?,
             parking_slots = ?,
-            chat_id = ?
+            building_id = ?
         WHERE id = ?
         """,
         (
@@ -339,13 +341,58 @@ def update_tenant_db(
             payment_type,
             next_payment_date,
             parking_slots,
-            chat_id,
+            building_id,
             tenant_id,
         ),
     )
     conn.commit()
     conn.close()
+
     # ─────────── Tickets helpers ───────────
+
+def update_tenant_name_db(tenant_id: int, name: str) -> bool:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE tenants SET name = ? WHERE id = ?", (name, tenant_id))
+    conn.commit()
+    ok = cur.rowcount > 0
+    conn.close()
+    return ok
+
+def get_tenants_summary_db(building_id: int | None = None) -> list[dict]:
+    conn = get_connection()
+    cur = conn.cursor()
+
+    q = """
+    SELECT
+      tn.id, tn.name, tn.apartment, tn.tenant_type, tn.email,
+      tn.payment_type, tn.next_payment_date, tn.parking_slots,
+      tn.chat_id, tn.building_id,
+      b.street, b.number, b.city
+    FROM tenants tn
+    LEFT JOIN buildings b ON b.id = tn.building_id
+    WHERE 1=1
+    """
+    params = []
+    if building_id is not None:
+      q += " AND tn.building_id = ?"
+      params.append(building_id)
+
+    q += " ORDER BY tn.building_id, tn.apartment, tn.name"
+
+    cur.execute(q, params)
+    rows = cur.fetchall()
+    conn.close()
+
+    out = []
+    for r in rows:
+        out.append({
+            "id": r[0], "name": r[1], "apartment": r[2], "tenant_type": r[3],
+            "email": r[4], "payment_type": r[5], "next_payment_date": r[6],
+            "parking_slots": r[7], "chat_id": r[8], "building_id": r[9],
+            "building_street": r[10], "building_number": r[11], "building_city": r[12],
+        })
+    return out
 
 # ─────────── Ticket helpers ───────────
 
@@ -928,3 +975,54 @@ def list_staff_users_db(limit: int = 200) -> list[dict]:
         }
         for r in rows
     ]
+
+def get_tenants_due_this_month_db(building_id: int | None = None) -> list[dict]:    
+    today = date.today().isoformat()          # 'YYYY-MM-DD'
+    month_start = date.today().replace(day=1)
+    next_month = (month_start + timedelta(days=32)).replace(day=1)
+    month_end = next_month - timedelta(days=1)
+
+    month_start_str = month_start.isoformat()
+    month_end_str = month_end.isoformat()
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    q = """
+    SELECT id, name, apartment, next_payment_date, payment_type, building_id
+    FROM tenants
+    WHERE next_payment_date IS NOT NULL
+      AND next_payment_date >= ?
+      AND next_payment_date <= ?
+    """
+    params = [month_start_str, month_end_str]
+
+    if building_id is not None:
+        q += " AND building_id = ?"
+        params.append(building_id)
+
+    q += " ORDER BY next_payment_date ASC"
+
+    cur.execute(q, params)
+    rows = cur.fetchall()
+    conn.close()
+
+    return [{
+        "id": r[0], "name": r[1], "apartment": r[2],
+        "next_payment_date": r[3], "payment_type": r[4],
+        "building_id": r[5],
+    } for r in rows]
+
+def compute_missing_tenant_fields(tenant: dict) -> list[str]:
+    missing = []
+    if not (tenant.get("tenant_type") or "").strip():
+        missing.append("tenant_type")
+    if not (tenant.get("email") or "").strip():
+        missing.append("email")
+    if not (tenant.get("payment_type") or "").strip():
+        missing.append("payment_type")
+    if not (tenant.get("next_payment_date") or "").strip():
+        missing.append("next_payment_date")
+    if not (tenant.get("parking_slots") or "").strip():
+        missing.append("parking_slots")
+    return missing

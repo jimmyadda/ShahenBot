@@ -1,5 +1,5 @@
 import asyncio
-from datetime import time
+import time
 import logging
 import os
 import json
@@ -60,7 +60,7 @@ def build_main_menu_keyboard(chat_id: int, lang: str):
     Shows 'Register' button until user is linked to a tenant.
     """
     # Need this helper to check if user already linked to tenant
-    tenant = api_get_tenant_by_chat(chat_id)
+    tenant = api_get_tenant_by_chat_id(chat_id)
     has_tenant = tenant is not None
 
     lang_row = [
@@ -245,6 +245,28 @@ def api_get_tenants_by_building_apartment(building_id: int, apartment: str, only
     r.raise_for_status()
     return (r.json() or {}).get("tenants", [])
 
+def api_create_tenant_auto(building_id: int, apartment: str, chat_id: int, language: str):
+    r = httpx.post(
+        f"{API_BASE_URL}/api/tenants/auto_register",
+        json={
+            "building_id": building_id,
+            "apartment": apartment,
+            "chat_id": chat_id,
+            "language": language,
+        },
+        timeout=10,
+    )
+    if r.status_code != 200:
+        return None
+    return (r.json() or {}).get("tenant")
+
+def api_update_tenant_name(tenant_id: int, name: str) -> bool:
+    r = httpx.post(
+        f"{API_BASE_URL}/api/tenants/{tenant_id}/name",
+        json={"name": name},
+        timeout=10,
+    )
+    return r.status_code == 200
 # ───────────── Keyword-based category detection ─────────────
 
 def detect_category_from_text(text: str, lang: str):
@@ -516,7 +538,20 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("awaiting_edit", None)
         context.user_data.pop("editing_ticket_id", None)
         return
-    
+    #add name to auto register
+    if context.user_data.get("awaiting_name"):
+        tenant_id = context.user_data.get("name_tenant_id")
+        name = text.strip()
+
+        ok = api_update_tenant_name(tenant_id, name)
+        if ok:
+            await msg.reply_text(get_text(lang, "register_name_saved").format(name=name))
+        else:
+            await msg.reply_text(get_text(lang, "register_name_save_failed"))
+
+        context.user_data.pop("awaiting_name", None)
+        context.user_data.pop("name_tenant_id", None)
+        return
     # -------- Registration flow (street -> building -> apartment) --------
     step = context.user_data.get("register_step")
 
@@ -550,7 +585,23 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tenants = api_get_tenants_by_building_apartment(building_id, apartment, only_without_chat=True)
 
         if not tenants:
-            await msg.reply_text(get_text(lang, "register_not_found").format(apartment=apartment))
+            # Auto create tenant and link chat_id
+            created = api_create_tenant_auto(
+                building_id=building_id,
+                apartment=apartment,
+                chat_id=chat_id,
+                language=lang,
+            )
+            if created:
+                tenant_id = created["id"]
+                context.user_data["awaiting_name"] = True
+                context.user_data["name_tenant_id"] = tenant_id
+
+                await msg.reply_text(get_text(lang, "register_success_ask_name"))
+                return
+            else:
+                await msg.reply_text(get_text(lang, "register_failed"))
+
             context.user_data.clear()
             return
 
@@ -728,7 +779,7 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = api_get_user_language(chat_id)
 
     # Check if already linked
-    tenant = api_get_tenant_by_chat(chat_id)
+    tenant = api_get_tenant_by_chat_id(chat_id)
     if tenant:
         txt = get_text(lang, "register_already_linked").format(
             name=tenant.get("name", ""),
@@ -818,7 +869,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     ]
 
-    tenant = api_get_tenant_by_chat(chat_id)
+    tenant = api_get_tenant_by_chat_id(chat_id)
     if not tenant:
         keyboard_rows.append(
             [
@@ -882,7 +933,6 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     await update.message.reply_text(text, parse_mode="Markdown")
-
 
 def main():
     if DISABLE_POLLING:

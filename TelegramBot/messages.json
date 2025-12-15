@@ -52,7 +52,11 @@
   "register_ask_building_number": "מה מספר הבניין?",
   "register_ask_apartment": "מה מספר הדירה?",
   "register_building_not_found": "לא מצאתי את הבניין: {street} {number}. פנה לוועד/אדמין כדי להוסיף אותו.",
-  "must_register_first": "עליך להירשם קודם"
+  "must_register_first": "עליך להירשם קודם",
+    "register_success_ask_name": "נרשמת! 🎉\nאיך לקרוא לך?",
+  "register_name_saved": "מעולה {name}! שמרתי את השם שלך ✅",
+  "register_name_save_failed": "לא הצלחתי לשמור את השם. נסה שוב."
+
   },
   "en": {
     "start": "Hi 👋 I'm the building assistant bot.\nChoose language and then you can report a problem.",
@@ -107,7 +111,10 @@
   "register_ask_building_number": "What is the building number?",
   "register_ask_apartment": "What is the apartment number?",
   "register_building_not_found": "I couldn't find the building: {street} {number}. Please contact the building manager or admin to add it.",
-  "must_register_first": "You must register first"
+  "must_register_first": "You must register first",
+    "register_success_ask_name": "You’re registered! 🎉\nWhat name should I use for you?",
+  "register_name_saved": "Perfect {name}! I saved your name ✅",
+  "register_name_save_failed": "I couldn't save your name. Please try again."
 
   },
   "fr": {
@@ -163,6 +170,9 @@
   "register_ask_building_number": "Quel est le numéro de l’immeuble ?",
   "register_ask_apartment": "Quel est le numéro de l’appartement ?",
   "register_building_not_found": "Je n’ai pas trouvé l’immeuble : {street} {number}. Veuillez contacter le syndic ou l’administrateur pour l’ajouter.",
-"must_register_first": "Veuillez d’abord vous inscrire"
+"must_register_first": "Veuillez d’abord vous inscrire",
+  "register_success_ask_name": "Inscription réussie ! 🎉\nComment dois-je t’appeler ?",
+  "register_name_saved": "Parfait {name} ! J’ai enregistré ton nom ✅",
+  "register_name_save_failed": "Je n’ai pas réussi à enregistrer le nom. Réessaie."
   }
 }

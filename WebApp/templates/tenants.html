@@ -197,23 +197,24 @@
                                 <td>{{ t.next_payment_date or '' }}</td>
                                 <td>{{ t.parking_slots | replace(',', ', ') if t.parking_slots is not none else '' }}</td>
                                 <td>
-                                    <button
-                                        type="button"
-                                        class="btn btn-sm btn-outline-primary"
-                                        data-bs-toggle="modal"
-                                        data-bs-target="#editTenantModal"
-                                        data-id="{{ t.id }}"
-                                        data-name="{{ t.name }}"
-                                        data-apartment="{{ t.apartment or '' }}"
-                                        data-tenant_type="{{ t.tenant_type or '' }}"
-                                        data-email="{{ t.email or '' }}"
-                                        data-payment_type="{{ t.payment_type or '' }}"
-                                        data-next_payment_date="{{ t.next_payment_date or '' }}"
-                                        data-parking_slots="{{ t.parking_slots if t.parking_slots is not none else '' }}"
-                                        data-update_url="{{ url_for('admin_update_tenant', tenant_id=t.id) }}"
-                                    >
-                                        ✏️ עריכה
-                                    </button>
+                                <button
+                                    type="button"
+                                    id="edit-btn-{{ t.id }}"
+                                    class="btn btn-sm btn-outline-primary"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#editTenantModal"
+                                    data-id="{{ t.id }}"
+                                    data-name="{{ t.name }}"
+                                    data-apartment="{{ t.apartment or '' }}"
+                                    data-tenant_type="{{ t.tenant_type or '' }}"
+                                    data-email="{{ t.email or '' }}"
+                                    data-payment_type="{{ t.payment_type or '' }}"
+                                    data-next_payment_date="{{ t.next_payment_date or '' }}"
+                                    data-parking_slots="{{ t.parking_slots if t.parking_slots is not none else '' }}"
+                                    data-update_url="{{ url_for('admin_tenants', tenant_id=t.id) }}"
+                                >
+                                    ✏️ עריכה
+                                </button>
                                 </td>
                             </tr>
                         {% endfor %}
@@ -278,6 +279,19 @@
                   <label class="form-label">תשלום הבא (תאריך)</label>
                   <input type="date" class="form-control" name="next_payment_date">
               </div>
+              <div class="col-md-6">
+                <label class="form-label">Building</label>
+                <select class="form-select" name="building_id" required>
+                    <option value="">-- Select --</option>
+                    {% for b in buildings %}
+                    <option value="{{ b.id }}"
+                        {% if tenant and tenant.building_id == b.id %}selected{% endif %}>
+                        #{{ b.id }} — {{ b.street }} {{ b.number }}{% if b.city %}, {{ b.city }}{% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+                </div>
+
           </div>
         </div>
         <div class="modal-footer">
@@ -337,6 +351,20 @@
                   <label class="form-label">תשלום הבא (תאריך)</label>
                   <input type="date" class="form-control" name="next_payment_date" id="edit-next_payment_date">
               </div>
+
+              <div class="col-md-6">
+                <label class="form-label">Building</label>
+                <select class="form-select" name="building_id" required>
+                    <option value="">-- Select --</option>
+                    {% for b in buildings %}
+                    <option value="{{ b.id }}"
+                        {% if tenant and tenant.building_id == b.id %}selected{% endif %}>
+                        #{{ b.id }} — {{ b.street }} {{ b.number }}{% if b.city %}, {{ b.city }}{% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+                </div>
+
           </div>
         </div>
         <div class="modal-footer">
@@ -380,6 +408,8 @@
             document.getElementById('edit-parking_slots').value = parking_slots;
         });
     }
+
+
 </script>
 </body>
 </html>

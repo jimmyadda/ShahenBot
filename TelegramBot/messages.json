@@ -55,8 +55,15 @@
   "must_register_first": "עליך להירשם קודם",
     "register_success_ask_name": "נרשמת! 🎉\nאיך לקרוא לך?",
   "register_name_saved": "מעולה {name}! שמרתי את השם שלך ✅",
-  "register_name_save_failed": "לא הצלחתי לשמור את השם. נסה שוב."
-
+  "register_name_save_failed": "לא הצלחתי לשמור את השם. נסה שוב.",
+    "payment_error_try_again": "משהו השתבש בתשלום. נסה/י שוב דרך כפתור התשלום.",
+    "payment_send_proof_photo_or_file": "אנא שלח/י צילום מסך או קובץ של אישור התשלום.",
+    "payment_proof_upload_fail": "לא הצלחתי לשמור את האסמכתא. נסה/י שוב בעוד רגע.",
+    "payment_proof_received_pending_admin": "✅ האסמכתא התקבלה.\nהתשלום ממתין לאישור ועד הבית.",
+    "payment_choose_method": "בחר/י אמצעי תשלום:",
+    "payment_method_bank": "🏦 העברה בנקאית",
+    "payment_method_bit": "📲 Bit / PayBox",
+    "payment_send_proof_now": "מעולה 👍\nאנא שלח/י עכשיו צילום מסך / קובץ של אישור התשלום."
   },
   "en": {
     "start": "Hi 👋 I'm the building assistant bot.\nChoose language and then you can report a problem.",
@@ -114,7 +121,16 @@
   "must_register_first": "You must register first",
     "register_success_ask_name": "You’re registered! 🎉\nWhat name should I use for you?",
   "register_name_saved": "Perfect {name}! I saved your name ✅",
-  "register_name_save_failed": "I couldn't save your name. Please try again."
+  "register_name_save_failed": "I couldn't save your name. Please try again.",
+    "payment_error_try_again": "Something went wrong with the payment. Please try again using the payment button.",
+    "payment_send_proof_photo_or_file": "Please send a screenshot or a file as proof of payment.",
+    "payment_proof_upload_fail": "I couldn't save the proof. Please try again in a moment.",
+    "payment_proof_received_pending_admin": "✅ Proof received.\nYour payment is pending approval by the building committee.",
+    "payment_choose_method": "Choose a payment method:",
+    "payment_method_bank": "🏦 Bank transfer",
+    "payment_method_bit": "📲 Bit / PayBox",
+    "payment_send_proof_now": "Great 👍\nNow please send a screenshot / file as proof of payment."
+  
 
   },
   "fr": {
@@ -173,6 +189,14 @@
 "must_register_first": "Veuillez d’abord vous inscrire",
   "register_success_ask_name": "Inscription réussie ! 🎉\nComment dois-je t’appeler ?",
   "register_name_saved": "Parfait {name} ! J’ai enregistré ton nom ✅",
-  "register_name_save_failed": "Je n’ai pas réussi à enregistrer le nom. Réessaie."
+  "register_name_save_failed": "Je n’ai pas réussi à enregistrer le nom. Réessaie.",
+  "payment_error_try_again": "Un problème est survenu avec le paiement. Veuillez réessayer via le bouton de paiement.",
+    "payment_send_proof_photo_or_file": "Veuillez envoyer une capture d’écran ou un fichier comme justificatif de paiement.",
+    "payment_proof_upload_fail": "Je n’ai pas pu enregistrer le justificatif. Réessayez dans un instant.",
+    "payment_proof_received_pending_admin": "✅ Justificatif reçu.\nVotre paiement est en attente de validation par le comité de l’immeuble.",
+    "payment_choose_method": "Choisissez un moyen de paiement :",
+    "payment_method_bank": "🏦 Virement bancaire",
+    "payment_method_bit": "📲 Bit / PayBox",
+    "payment_send_proof_now": "Parfait 👍\nVeuillez envoyer maintenant une capture d’écran / un fichier comme justificatif."
   }
 }

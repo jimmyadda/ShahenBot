@@ -267,6 +267,7 @@ def api_update_tenant_name(tenant_id: int, name: str) -> bool:
         timeout=10,
     )
     return r.status_code == 200
+
 # ───────────── Keyword-based category detection ─────────────
 
 def detect_category_from_text(text: str, lang: str):
@@ -359,7 +360,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
         return
+    #Payments
+    # inside button_handler
+    if data == "pay_open":
+        await handle_pay_open(update, context)
+        return
 
+    if data in ("pay_method_bank", "pay_method_bit"):
+        await handle_pay_method(update, context)
+        return
     # Manual category picked
     if data in ["parking", "noise", "water", "elevator", "other"]:
         key_map = {
@@ -579,7 +588,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # -------- Registration flow (street -> building -> apartment) --------
     step = context.user_data.get("register_step")
-
+    
     if step == "street":
         context.user_data["street"] = text.strip()
         context.user_data["register_step"] = "building_number"
@@ -825,7 +834,6 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await msg.reply_text(get_text(lang, "register_ask_street"))
 
-
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     chat_id = msg.chat_id
@@ -835,7 +843,8 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not caption.strip():
         await msg.reply_text(get_text(lang, "photo_need_caption"))
         return
-
+    if context.user_data.get("payment_step") == "awaiting_proof":
+       return
     # Get best resolution photo
     photo = msg.photo[-1]
     tg_file = await photo.get_file()
@@ -968,6 +977,132 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(text, parse_mode="Markdown")
 
+async def handle_pay_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    chat_id = query.message.chat_id
+    lang = api_get_user_language(chat_id)
+
+    # reset state for payment flow
+    context.user_data.pop("pending_ticket", None)
+    context.user_data.pop("pending_photo", None)
+
+    context.user_data["payment_step"] = "choose_method"
+
+    keyboard = [
+        [InlineKeyboardButton(get_text(lang, "payment_method_bank"), callback_data="pay_method_bank")],
+        [InlineKeyboardButton(get_text(lang, "payment_method_bit"), callback_data="pay_method_bit")]
+    ]
+
+    await query.edit_message_text(
+        get_text(lang, "payment_choose_method"),
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+async def handle_pay_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    chat_id = query.message.chat_id
+    lang = api_get_user_language(chat_id)
+
+    method = "bank_transfer" if query.data == "pay_method_bank" else "bit"
+    logger.info("PAY: method selected=%s chat_id=%s", method, chat_id)    
+    
+
+    # Create pending payment in Flask
+
+    try:
+        resp = requests.post(
+            f"{API_BASE_URL}/api/payments/create_pending",
+            json={"chat_id": chat_id, "amount_cents": 30000, "method": method},
+            timeout=10,
+        )
+        logger.info("PAY: create_pending status=%s text=%s", resp.status_code, resp.text)
+
+        if not resp.ok:
+            await query.message.reply_text(get_text(lang, "payment_error_try_again"))
+            return
+
+        data = resp.json() or {}
+        payment_id = data.get("payment_id")
+        logger.info("PAY: payment_id=%s", payment_id)
+
+        if not payment_id:
+            await query.message.reply_text(get_text(lang, "payment_error_try_again"))
+            return
+
+        context.user_data["payment_step"] = "awaiting_proof"
+        context.user_data["payment_id"] = payment_id
+        context.user_data["payment_method"] = method
+
+        # ✅ Try edit first, if fails - send normal message
+        try:
+            await query.edit_message_text(get_text(lang, "payment_send_proof_now"))
+        except Exception as e:
+            logger.exception("PAY: edit_message_text failed: %s", e)
+            await query.message.reply_text(get_text(lang, "payment_send_proof_now"))
+
+    except Exception as e:
+        logger.exception("PAY: create_pending exception: %s", e)
+        await query.message.reply_text(get_text(lang, "payment_error_try_again"))
+        return
+
+async def payment_proof_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    if not msg:
+        return
+
+    # only in payment flow
+    if context.user_data.get("payment_step") != "awaiting_proof":
+        return
+
+    chat_id = msg.chat_id
+    lang = api_get_user_language(chat_id)
+
+    payment_id = context.user_data.get("payment_id")
+    if not payment_id:
+        context.user_data.pop("payment_step", None)
+        await msg.reply_text(get_text(lang, "payment_error_try_again"))
+        return
+
+    if msg.photo:
+        file_id = msg.photo[-1].file_id
+        file_type = "photo"
+    elif msg.document:
+        file_id = msg.document.file_id
+        file_type = "document"
+    else:
+        await msg.reply_text(get_text(lang, "payment_send_proof_photo_or_file"))
+        return
+
+    try:
+        resp = requests.post(
+            f"{API_BASE_URL}/api/payments/{payment_id}/attach_proof",
+            json={"file_id": file_id, "file_type": file_type},
+            timeout=10,
+        )
+        if not resp.ok:
+            logger.error("attach_proof error: %s %s", resp.status_code, resp.text)
+            await msg.reply_text(get_text(lang, "payment_proof_upload_fail"))
+            return
+    except Exception as e:
+        logger.exception("attach_proof exception: %s", e)
+        await msg.reply_text(get_text(lang, "payment_proof_upload_fail"))
+        return
+
+    # clear payment state
+    context.user_data.pop("payment_step", None)
+    context.user_data.pop("payment_id", None)
+    context.user_data.pop("payment_method", None)
+
+    await msg.reply_text(get_text(lang, "payment_proof_received_pending_admin"))
+
+
+
+
+
 def main():
     if DISABLE_POLLING:
         logging.warning("🚫 Telegram polling is DISABLED (DISABLE_POLLING=true)")
@@ -984,6 +1119,7 @@ def main():
     app.add_handler(CommandHandler("mytickets", mytickets))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+    app.add_handler(MessageHandler((filters.PHOTO | filters.Document.ALL) & ~filters.COMMAND, payment_proof_handler))
     app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, photo_handler))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_error_handler(error_handler)

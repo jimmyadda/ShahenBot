@@ -1,8 +1,9 @@
 # WebApp/app.py
+from datetime import date
 import logging
 import os
 import sqlite3
-from flask import session, abort
+from flask import Response, flash, session, abort
 from dotenv import load_dotenv
 import requests
 import uuid
@@ -17,13 +18,20 @@ from flask import (
     url_for,
 )
 from shahenbot_db import (
+    approve_payment_db,
+    attach_payment_proof_db,
     compute_missing_tenant_fields,
+    create_pending_payment_db,
+    get_payment_by_id_db,
+    get_pending_payments_db,
     get_tenants_by_building_apartment_db,
     get_tenants_due_this_month_db,
     get_tenants_summary_db,
     init_db,
     get_user_language_db,
+    is_fully_registered,
     resolve_building_by_street_number_db,
+    set_next_payment_date_from_months_db,
     set_user_language_db,
     create_ticket_db,
     get_tickets_db,
@@ -51,7 +59,9 @@ from shahenbot_db import (
     list_staff_users_db,
     update_building_db, 
     deactivate_building_db  ,
-    backfill_building_ids_db
+    backfill_building_ids_db,
+        get_tenant_by_chat_id_db,
+    should_add_payment_cta,
 )
 
 
@@ -86,21 +96,31 @@ init_db()
 ensure_super_admin()
 
 
-def send_telegram_message(chat_id: int, text: str):
+def send_telegram_message(chat_id: int, text: str, buttons: list | None = None):
+    """
+    buttons example:
+    [
+      [{"text": "💳 תשלום ועד", "callback_data": "pay_open"}]
+    ]
+    """
     if not BOT_TOKEN:
         print("BOT_TOKEN not set, cannot send Telegram messages")
         return
+
+    payload = {"chat_id": chat_id, "text": text}
+    if buttons:
+        payload["reply_markup"] = {"inline_keyboard": buttons}
+
     try:
         resp = requests.post(
             f"{TELEGRAM_API}/sendMessage",
-            json={"chat_id": chat_id, "text": text},
+            json=payload,
             timeout=10,
         )
         if not resp.ok:
             print("Telegram sendMessage error:", resp.status_code, resp.text)
     except Exception as e:
         print("Telegram sendMessage exception:", e)
-
 
 # User Helper
 def current_user():
@@ -403,8 +423,21 @@ def admin_update_status(ticket_id):
             f"תיאור:\n{desc}"
         )
 
+        #for cid in recipients:
+        #    send_telegram_message(cid, notify_text)
+
         for cid in recipients:
-            send_telegram_message(cid, notify_text)
+            text = notify_text
+            buttons = None
+
+            tenant = get_tenant_by_chat_id_db(cid)
+            show_pay, reason = should_add_payment_cta(tenant) if tenant else (False, None)
+
+            if show_pay:
+                text += f"\n\n💡 {reason}"
+                buttons = [[{"text": "💳 תשלום ועד", "callback_data": "pay_open"}]]
+
+            send_telegram_message(cid, text, buttons=buttons)
 
     return redirect(url_for("admin_dashboard"))
 
@@ -685,6 +718,144 @@ def api_tenants_by_building_apartment():
 
     return jsonify({"tenants": tenants}), 200
 
+
+
+# ───────────────────────────────────────────────
+#   API: TENANTS PAYMENTS
+# ───────────────────────────────────────────────
+
+@app.post("/api/payments/create_pending")
+def api_payments_create_pending():
+    data = request.get_json(force=True) or {}
+    chat_id = int(data.get("chat_id") or 0)
+    amount_cents = int(data.get("amount_cents") or 0)
+    method = (data.get("method") or "bank_transfer").strip()
+    period_ym = (data.get("period_ym") or "").strip() or None
+
+    res = create_pending_payment_db(chat_id=chat_id, amount_cents=amount_cents, method=method, period_ym=period_ym)
+
+    if not res.get("ok"):
+        # 400 only for not_registered_fully, else 500
+        if res.get("error") == "not_registered_fully":
+            return jsonify(res), 400
+        return jsonify(res), 500
+
+    return jsonify(res), 200
+
+@app.post("/api/payments/<int:payment_id>/attach_proof")
+def api_payments_attach_proof(payment_id):
+    data = request.get_json(force=True) or {}
+    file_id = (data.get("file_id") or "").strip()
+    file_type = (data.get("file_type") or "").strip()
+
+    res = attach_payment_proof_db(payment_id, file_id, file_type)
+    if not res.get("ok"):
+        return jsonify(res), 400
+    return jsonify(res), 200
+
+@app.get("/admin/payments")
+def admin_payments():
+    building_id = request.args.get("building_id", type=int)
+    payments = get_pending_payments_db(building_id)
+    return render_template("admin_payments.html", payments=payments)
+
+@app.post("/admin/payments/<int:payment_id>/approve")
+def admin_approve_payment(payment_id):
+    months = request.form.get("months", type=int)
+    if not months:
+        flash("חובה להזין מספר חודשים לתשלום הבא", "danger")
+        return redirect(url_for("admin_payments"))
+
+    p = get_payment_by_id_db(payment_id)
+    if not p:
+        flash("תשלום לא נמצא", "danger")
+        return redirect(url_for("admin_payments"))
+
+    if not p.get("proof_file_id") or p["proof_file_id"] == "TEMP":
+        flash("לא ניתן לאשר ללא אסמכתא", "danger")
+        return redirect(url_for("admin_payments"))
+
+    ok = approve_payment_db(payment_id, approved_by="admin")
+    if not ok:
+        flash("לא הצלחתי לאשר (אולי כבר טופל)", "warning")
+        return redirect(url_for("admin_payments"))
+
+    new_next = set_next_payment_date_from_months_db(p["tenant_id"], months)
+
+    # אופציונלי: הודעה לדייר
+    if p.get("chat_id"):
+        amount = (p["amount_cents"] or 0) / 100
+        txt = (
+            f"✅ התשלום אושר\n"
+            f"דירה: {p.get('apartment')}\n"
+            f"סכום: {amount:.2f} {p.get('currency','ILS')}\n"
+            f"תשלום הבא עודכן ל: {new_next}"
+        )
+        send_telegram_message(p["chat_id"], txt)
+
+    flash("התשלום אושר ועודכן תשלום הבא", "success")
+    return redirect(url_for("admin_payments"))
+
+
+@app.post("/admin/payments/<int:payment_id>/reject")
+def admin_reject_payment(payment_id):
+    note = (request.form.get("note") or "").strip()
+
+    p = get_payment_by_id_db(payment_id)
+    if not p:
+        flash("תשלום לא נמצא", "danger")
+        return redirect(url_for("admin_payments"))
+
+    if not p.get("proof_file_id") or p["proof_file_id"] == "TEMP":
+        flash("לא ניתן לדחות ללא אסמכתא", "danger")
+        return redirect(url_for("admin_payments"))
+
+    ok = reject_payment_db(payment_id, note=note or None, approved_by="admin")
+    if not ok:
+        flash("לא הצלחתי לדחות (אולי כבר טופל)", "warning")
+        return redirect(url_for("admin_payments"))
+
+    if p.get("chat_id"):
+        txt = "❌ התשלום נדחה."
+        if note:
+            txt += f"\nסיבה: {note}"
+        txt += "\n\nאפשר לשלוח שוב אסמכתא ברורה יותר."
+        buttons = [[{"text": "💳 תשלום ועד", "callback_data": "pay_open"}]]
+        send_telegram_message(p["chat_id"], txt, buttons=buttons)
+
+    flash("התשלום נדחה", "warning")
+    return redirect(url_for("admin_payments"))
+
+
+def tg_get_file_path(file_id: str) -> str | None:
+    r = requests.get(f"{TELEGRAM_API}/getFile", params={"file_id": file_id}, timeout=10)
+    if not r.ok:
+        return None
+    j = r.json() or {}
+    return (j.get("result") or {}).get("file_path")
+
+@app.get("/admin/payments/<int:payment_id>/proof")
+def admin_payment_proof(payment_id):
+    p = get_payment_by_id_db(payment_id)
+    if not p:
+        abort(404)
+
+    file_id = p.get("proof_file_id")
+    if not file_id or file_id == "TEMP":
+        abort(404)
+
+    file_path = tg_get_file_path(file_id)
+    if not file_path:
+        abort(404)
+
+    file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+    r = requests.get(file_url, stream=True, timeout=20)
+    if not r.ok:
+        abort(404)
+
+    content_type = r.headers.get("Content-Type", "application/octet-stream")
+    return Response(r.iter_content(chunk_size=8192), content_type=content_type)
+
 @app.post("/api/tenants/auto_register")
 def api_tenants_auto_register():
     data = request.json or {}
@@ -722,6 +893,12 @@ def api_update_tenant_name(tenant_id: int):
         return jsonify({"error": "not_found"}), 404
 
     return jsonify({"ok": True}), 200
+
+
+
+
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5001"))
     app.run(host="0.0.0.0", port=port)    

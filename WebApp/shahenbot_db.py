@@ -105,6 +105,47 @@ def init_db():
         """
     )
 
+ #Payments
+    cur.execute(
+        """
+           CREATE TABLE IF NOT EXISTS payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            building_id INTEGER NOT NULL,
+            tenant_id   INTEGER NOT NULL,
+
+            amount_cents INTEGER NOT NULL,
+            currency     TEXT NOT NULL DEFAULT 'ILS',
+
+            method TEXT NOT NULL,     -- 'bank_transfer' / 'bit' / 'paybox' / ...
+            status TEXT NOT NULL,     -- 'pending' / 'approved' / 'rejected'
+
+            period_ym TEXT NULL,      -- אופציונלי: 'YYYY-MM' כדי לשייך תשלום לחודש
+
+            proof_file_id   TEXT NOT NULL,  -- חובה כדי לאשר/לדחות
+            proof_file_type TEXT NULL,      -- 'photo' / 'document'
+
+            note TEXT NULL,
+
+            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            approved_at TEXT NULL,
+            approved_by TEXT NULL
+        );
+        """)
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_payments_tenant_status
+        ON payments(tenant_id, status); """)
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_payments_building_created
+        ON payments(building_id, created_at);""")
+
+    cur.execute(
+        """        
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_tenant_period
+        ON payments(tenant_id, period_ym);""")
+
 
         # In case tickets existed before without tenant_id – add column if missing
     cur.execute("PRAGMA table_info(tickets)")
@@ -1023,6 +1064,312 @@ def compute_missing_tenant_fields(tenant: dict) -> list[str]:
         missing.append("payment_type")
     if not (tenant.get("next_payment_date") or "").strip():
         missing.append("next_payment_date")
-    if not (tenant.get("parking_slots") or "").strip():
+    if not str(tenant.get("parking_slots") or "").strip():
         missing.append("parking_slots")
     return missing
+
+# PAyments Helpers
+
+def get_pending_payments_db(building_id: int | None = None):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    sql = """
+    SELECT
+        p.id,
+        p.building_id,
+        p.tenant_id,
+        p.amount_cents,
+        p.currency,
+        p.method,
+        p.status,
+        p.period_ym,
+        p.proof_file_id,
+        p.proof_file_type,
+        p.note,
+        p.created_at,
+        t.name,
+        t.apartment,
+        t.chat_id,
+        t.next_payment_date
+    FROM payments p
+    JOIN tenants t ON t.id = p.tenant_id
+    WHERE p.status='pending'
+    """
+    params = []
+
+    if building_id is not None:
+        sql += " AND p.building_id=?"
+        params.append(building_id)
+
+    sql += " ORDER BY p.created_at DESC"
+
+    cur.execute(sql, tuple(params))
+    rows = cur.fetchall()
+    conn.close()
+
+    payments = []
+    for r in rows:
+        payments.append({
+            "id": r[0],
+            "building_id": r[1],
+            "tenant_id": r[2],
+            "amount_cents": r[3],
+            "currency": r[4],
+            "method": r[5],
+            "status": r[6],
+            "period_ym": r[7],
+            "proof_file_id": r[8],
+            "proof_file_type": r[9],
+            "note": r[10],
+            "created_at": r[11],
+            "tenant_name": r[12],
+            "apartment": r[13],
+            "chat_id": r[14],
+            "next_payment_date": r[15],
+        })
+    return payments
+def get_payment_by_id_db(payment_id: int) -> dict | None:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT
+            p.id,
+            p.building_id,
+            p.tenant_id,
+            p.amount_cents,
+            p.currency,
+            p.method,
+            p.status,
+            p.period_ym,
+            p.proof_file_id,
+            p.proof_file_type,
+            p.note,
+            p.created_at,
+            t.name,
+            t.apartment,
+            t.chat_id,
+            t.next_payment_date
+        FROM payments p
+        JOIN tenants t ON t.id = p.tenant_id
+        WHERE p.id=?
+        """,
+        (payment_id,),
+    )
+    r = cur.fetchone()
+    conn.close()
+    if not r:
+        return None
+    return {
+        "id": r[0],
+        "building_id": r[1],
+        "tenant_id": r[2],
+        "amount_cents": r[3],
+        "currency": r[4],
+        "method": r[5],
+        "status": r[6],
+        "period_ym": r[7],
+        "proof_file_id": r[8],
+        "proof_file_type": r[9],
+        "note": r[10],
+        "created_at": r[11],
+        "tenant_name": r[12],
+        "apartment": r[13],
+        "chat_id": r[14],
+        "next_payment_date": r[15],
+    }
+
+PAYMENT_WINDOW_DAYS = 14  # שבועיים
+
+def tenant_has_pending_payment_db(tenant_id: int) -> bool:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT 1 FROM payments WHERE tenant_id=? AND status='pending' LIMIT 1",
+        (tenant_id,),
+    )
+    r = cur.fetchone()
+    conn.close()
+    return bool(r)    
+
+def is_fully_registered(tenant: dict) -> bool:
+    if not tenant:
+        return False
+
+    required = ["name", "apartment", "building_id", "chat_id"]
+    for f in required:
+        v = tenant.get(f)
+        if v is None or str(v).strip() == "":
+            return False
+
+    return True
+
+def should_add_payment_cta(tenant: dict):
+    """
+    Returns: (show_button: bool, reason: str | None)
+    """
+    if not is_fully_registered(tenant):
+        return False, None
+
+    next_date = tenant.get("next_payment_date")
+    if not next_date:
+        return False, None
+
+    try:
+        next_dt = date.fromisoformat(next_date)  # 'YYYY-MM-DD'
+    except Exception:
+        return False, None
+
+    if tenant_has_pending_payment_db(tenant["id"]):
+        return False, None
+
+    today = date.today()
+
+    if next_dt < today:
+        return True, "יש תשלום ועד באיחור."
+    if next_dt <= today + timedelta(days=PAYMENT_WINDOW_DAYS):
+        return True, "תשלום ועד מתקרב."
+    return False, None
+
+def create_pending_payment_db(chat_id: int, amount_cents: int, method: str, period_ym: str | None = None) -> dict:
+    tenant = get_tenant_by_chat_id_db(chat_id)
+    if not tenant or not is_fully_registered(tenant):
+        return {"ok": False, "error": "not_registered_fully"}
+
+    if not period_ym:
+        period_ym = date.today().strftime("%Y-%m")
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # Reuse existing pending for same month
+    cur.execute(
+        "SELECT id FROM payments WHERE tenant_id=? AND status='pending' AND period_ym=? LIMIT 1",
+        (tenant["id"], period_ym),
+    )
+    r = cur.fetchone()
+    if r:
+        conn.close()
+        return {"ok": True, "payment_id": r[0], "existing": True}
+
+    try:
+        cur.execute(
+            """
+            INSERT INTO payments (building_id, tenant_id, amount_cents, currency, method, status, period_ym, proof_file_id)
+            VALUES (?, ?, ?, 'ILS', ?, 'pending', ?, 'TEMP')
+            """,
+            (tenant["building_id"], tenant["id"], int(amount_cents), method, period_ym),
+        )
+        conn.commit()
+        payment_id = cur.lastrowid
+        conn.close()
+        return {"ok": True, "payment_id": payment_id}
+
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        # In case UNIQUE period_ym race, fetch again
+        cur.execute(
+            "SELECT id FROM payments WHERE tenant_id=? AND status='pending' AND period_ym=? LIMIT 1",
+            (tenant["id"], period_ym),
+        )
+        r2 = cur.fetchone()
+        conn.close()
+        if r2:
+            return {"ok": True, "payment_id": r2[0], "existing": True}
+        return {"ok": False, "error": "integrity_error", "details": str(e)}
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return {"ok": False, "error": "server_error", "details": str(e)}
+
+def attach_payment_proof_db(payment_id: int, file_id: str, file_type: str) -> dict:
+    if not file_id:
+        return {"ok": False, "error": "missing_file_id"}
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE payments
+        SET proof_file_id=?, proof_file_type=?
+        WHERE id=? AND status='pending'
+        """,
+        (file_id, file_type, payment_id),
+    )
+    conn.commit()
+    updated = cur.rowcount
+    conn.close()
+
+    if updated == 0:
+        return {"ok": False, "error": "not_found_or_not_pending"}
+    return {"ok": True}
+
+def add_months(d: date, months: int) -> date:
+    """
+    Add months to date, clamping day to last day of target month.
+    Example: Jan 31 + 1 month => Feb 28/29
+    """
+    months = int(months)
+    y = d.year + (d.month - 1 + months) // 12
+    m = (d.month - 1 + months) % 12 + 1
+
+    # days in month
+    if m in (1, 3, 5, 7, 8, 10, 12):
+        last_day = 31
+    elif m in (4, 6, 9, 11):
+        last_day = 30
+    else:
+        # February
+        is_leap = (y % 4 == 0 and (y % 100 != 0 or y % 400 == 0))
+        last_day = 29 if is_leap else 28
+
+    day = min(d.day, last_day)
+    return date(y, m, day)
+
+def set_next_payment_date_from_months_db(tenant_id: int, months: int) -> str:
+    months = max(1, min(120, int(months)))  # הגנה
+    new_dt = add_months(date.today(), months)
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE tenants SET next_payment_date=? WHERE id=?",
+        (new_dt.isoformat(), tenant_id),
+    )
+    conn.commit()
+    conn.close()
+    return new_dt.isoformat()
+
+def approve_payment_db(payment_id: int, approved_by: str = "admin") -> bool:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE payments
+        SET status='approved', approved_at=datetime('now'), approved_by=?
+        WHERE id=? AND status='pending'
+        """,
+        (approved_by, payment_id),
+    )
+    conn.commit()
+    ok = (cur.rowcount or 0) > 0
+    conn.close()
+    return ok
+
+def reject_payment_db(payment_id: int, note: str | None = None, approved_by: str = "admin") -> bool:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE payments
+        SET status='rejected', approved_at=datetime('now'), approved_by=?, note=COALESCE(?, note)
+        WHERE id=? AND status='pending'
+        """,
+        (approved_by, note, payment_id),
+    )
+    conn.commit()
+    ok = (cur.rowcount or 0) > 0
+    conn.close()
+    return ok

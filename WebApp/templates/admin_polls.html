@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <title>ShahenBot – Polls</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+<body>
+<div class="container py-3">
+
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h3 class="m-0">הצבעות דיירים</h3>
+    <a class="btn btn-outline-secondary" href="{{ url_for('admin_dashboard') }}">חזרה לדשבורד</a>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, msg in messages %}
+        <div class="alert alert-{{category}}">{{msg}}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="card mb-4">
+    <div class="card-header">יצירת הצבעה</div>
+    <div class="card-body">
+      <form method="post" action="/admin/polls/create" class="row g-2">
+
+        {% if role == "super_admin" %}
+        <div class="col-md-4">
+          <label class="form-label">בניין</label>
+          <select name="building_id" class="form-select" required>
+            <option value="">בחר בניין...</option>
+            {% for b in buildings %}
+              <option value="{{b.id}}" {% if building_id==b.id %}selected{% endif %}>
+                {{b.city}} {{b.street}} {{b.number}}{% if b.name %} ({{b.name}}){% endif %}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        {% else %}
+          <input type="hidden" name="building_id" value="{{building_id}}">
+        {% endif %}
+
+        <div class="col-md-4">
+          <label class="form-label">קבוצת יעד</label>
+          <select name="target_group" class="form-select">
+            <option value="all">כל הדיירים</option>
+            <option value="owners">בעלי דירות</option>
+            <option value="renters">שוכרים</option>
+          </select>
+        </div>
+
+        <div class="col-md-4">
+          <label class="form-label">אנונימי?</label>
+          <select name="is_anonymous" class="form-select">
+            <option value="1" selected>כן</option>
+            <option value="0">לא</option>
+          </select>
+        </div>
+
+        <div class="col-md-12">
+          <label class="form-label">כותרת</label>
+          <input class="form-control" name="title" maxlength="120" required>
+        </div>
+
+        <div class="col-md-12">
+          <label class="form-label">תיאור (אופציונלי)</label>
+          <textarea class="form-control" name="description" rows="2"></textarea>
+        </div>
+
+        <div class="col-md-12">
+          <label class="form-label">אפשרויות (כל שורה אפשרות)</label>
+          <textarea class="form-control" name="options" rows="4" placeholder="כן&#10;לא" required></textarea>
+        </div>
+
+        <div class="col-12">
+          <button class="btn btn-primary">צור הצבעה</button>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">הצבעות קיימות</div>
+    <div class="card-body">
+      {% if not polls %}
+        <div class="alert alert-info m-0">אין הצבעות עדיין.</div>
+      {% else %}
+      <div class="table-responsive">
+        <table class="table table-striped align-middle">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>בניין</th>
+              <th>כותרת</th>
+              <th>יעד</th>
+              <th>סטטוס</th>
+              <th>נוצר</th>
+              <th class="text-center">פעולות</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in polls %}
+            <tr>
+              <td>{{p.id}}</td>
+              <td>{{p.building_id}}</td>
+              <td>{{p.title}}</td>
+              <td>{{p.target_group}}</td>
+              <td>{{p.status}}</td>
+              <td>{{p.created_at}}</td>
+                <td class="text-center">
+                {% if not p.sent_at %}
+                    <!-- עדיין לא נשלח -->
+                    <form method="post" action="{{ url_for('admin_polls_send', poll_id=p.id) }}" style="display:inline">
+                    <button class="btn btn-sm btn-outline-primary">
+                        שלח לדיירים
+                    </button>
+                    </form>
+                {% else %}
+                    <!-- כבר נשלח -->
+                    <a class="btn btn-sm btn-success"
+                    href="{{ url_for('admin_poll_results', poll_id=p.id) }}">
+                    הצג תוצאות
+                    </a>
+                {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

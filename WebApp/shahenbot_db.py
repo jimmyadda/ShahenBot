@@ -132,6 +132,63 @@ def init_db():
             approved_by TEXT NULL
         );
         """)
+    
+    cur.execute(
+        """
+            CREATE TABLE IF NOT EXISTS announcements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            building_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            body TEXT NOT NULL,
+            target_group TEXT NOT NULL DEFAULT 'all', -- all/owners/renters
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+        """)
+    #POOLs
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS polls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        building_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        target_group TEXT NOT NULL DEFAULT 'all',  -- all/owners/renters
+        is_anonymous INTEGER NOT NULL DEFAULT 1,   -- 1/0
+        status TEXT NOT NULL DEFAULT 'open',       -- open/closed
+        closes_at TEXT,                            -- ISO datetime optional
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+     """
+    )
+
+    cur.execute(
+                """
+        CREATE TABLE IF NOT EXISTS poll_options (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        poll_id INTEGER NOT NULL,
+        option_text TEXT NOT NULL,
+        FOREIGN KEY (poll_id) REFERENCES polls(id) ON DELETE CASCADE
+        );
+        """
+        )
+    
+    cur.execute(
+                """
+            CREATE TABLE IF NOT EXISTS poll_votes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            poll_id INTEGER NOT NULL,
+            option_id INTEGER NOT NULL,
+            tenant_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (poll_id) REFERENCES polls(id) ON DELETE CASCADE,
+            FOREIGN KEY (option_id) REFERENCES poll_options(id) ON DELETE CASCADE
+            );
+        """
+        )
+    cur.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_poll_vote_tenant ON poll_votes(poll_id, tenant_id); """)   
+
     cur.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_payments_tenant_status
@@ -157,6 +214,8 @@ def init_db():
 
     ensure_column(cur, "tickets", "building_id", "INTEGER")
     ensure_column(cur, "tenants", "building_id", "INTEGER")
+    ensure_column(cur, "polls", "closed_at", "TEXT")
+    ensure_column(cur, "polls", "sent_at", "TEXT")
     conn.commit()
     conn.close()
 
@@ -796,6 +855,17 @@ def get_building_by_id_db(building_id: int) -> dict | None:
         return None
     return {"id": r[0], "city": r[1], "street": r[2], "number": r[3], "name": r[4], "is_active": r[5], "created_at": r[6]}
 
+def get_buildings_db():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, city, street, number, name FROM buildings ORDER BY city, street, number")
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {"id": r[0], "city": r[1], "street": r[2], "number": r[3], "name": r[4]}
+        for r in rows
+    ]
+
 def list_buildings_db(limit: int = 500, search: str | None = None) -> list[dict]:
     conn = get_connection()
     cur = conn.cursor()
@@ -1075,60 +1145,35 @@ def get_pending_payments_db(building_id: int | None = None):
     cur = conn.cursor()
 
     sql = """
-    SELECT
-        p.id,
-        p.building_id,
-        p.tenant_id,
-        p.amount_cents,
-        p.currency,
-        p.method,
-        p.status,
-        p.period_ym,
-        p.proof_file_id,
-        p.proof_file_type,
-        p.note,
-        p.created_at,
-        t.name,
-        t.apartment,
-        t.chat_id,
-        t.next_payment_date
+    SELECT p.id, p.building_id, p.tenant_id, p.amount_cents, p.currency, p.method,
+           p.status, p.period_ym, p.proof_file_id, p.proof_file_type, p.note, p.created_at,
+           t.name, t.apartment, t.chat_id, t.next_payment_date
     FROM payments p
     JOIN tenants t ON t.id = p.tenant_id
     WHERE p.status='pending'
     """
     params = []
 
-    if building_id is not None:
+    if building_id:
         sql += " AND p.building_id=?"
         params.append(building_id)
 
     sql += " ORDER BY p.created_at DESC"
 
-    cur.execute(sql, tuple(params))
+    cur.execute(sql, params)
     rows = cur.fetchall()
     conn.close()
 
-    payments = []
-    for r in rows:
-        payments.append({
-            "id": r[0],
-            "building_id": r[1],
-            "tenant_id": r[2],
-            "amount_cents": r[3],
-            "currency": r[4],
-            "method": r[5],
-            "status": r[6],
-            "period_ym": r[7],
-            "proof_file_id": r[8],
-            "proof_file_type": r[9],
-            "note": r[10],
-            "created_at": r[11],
-            "tenant_name": r[12],
-            "apartment": r[13],
-            "chat_id": r[14],
-            "next_payment_date": r[15],
-        })
-    return payments
+    return [{
+        "id": r[0], "building_id": r[1], "tenant_id": r[2],
+        "amount_cents": r[3], "currency": r[4], "method": r[5],
+        "status": r[6], "period_ym": r[7],
+        "proof_file_id": r[8], "proof_file_type": r[9],
+        "note": r[10], "created_at": r[11],
+        "tenant_name": r[12], "apartment": r[13],
+        "chat_id": r[14], "next_payment_date": r[15],
+    } for r in rows]
+
 def get_payment_by_id_db(payment_id: int) -> dict | None:
     conn = get_connection()
     cur = conn.cursor()
@@ -1373,3 +1418,327 @@ def reject_payment_db(payment_id: int, note: str | None = None, approved_by: str
     ok = (cur.rowcount or 0) > 0
     conn.close()
     return ok
+
+def get_due_tenants_db(building_id: int | None, days_ahead: int = 0):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    sql = """
+    SELECT id, name, apartment, next_payment_date, building_id
+    FROM tenants
+    WHERE next_payment_date IS NOT NULL
+      AND date(next_payment_date) <= date('now', ?)
+    """
+    params = [f"+{int(days_ahead)} days"]
+
+    if building_id:
+        sql += " AND building_id=?"
+        params.append(building_id)
+
+    sql += " ORDER BY date(next_payment_date) ASC"
+
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {"id": r[0], "name": r[1], "apartment": r[2], "next_payment_date": r[3], "building_id": r[4]}
+        for r in rows
+    ]
+
+def get_payments_history_db(building_id: int | None, year: int | None = None, month: int | None = None):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    q = """
+    SELECT p.id, t.name, t.apartment, t.building_id,
+           p.amount_cents, p.currency, p.method, p.created_at
+    FROM payments p
+    JOIN tenants t ON t.id = p.tenant_id
+    WHERE p.status='approved'
+    """
+    params = []
+
+    if building_id:
+        q += " AND t.building_id=?"
+        params.append(building_id)
+
+    if year:
+        q += " AND strftime('%Y', p.created_at) = ?"
+        params.append(str(year))
+    if month:
+        q += " AND strftime('%m', p.created_at) = ?"
+        params.append(f"{int(month):02d}")
+
+    q += " ORDER BY p.created_at DESC"
+
+    cur.execute(q, params)
+    rows = cur.fetchall()
+    conn.close()
+
+    return [{
+        "id": r[0],
+        "tenant_name": r[1],
+        "apartment": r[2],
+        "building_id": r[3],
+        "amount_cents": r[4],
+        "currency": r[5],
+        "method": r[6],
+        "created_at": r[7],
+    } for r in rows]
+
+
+#------- POLLS------
+
+def get_staff_user_by_id_db(staff_user_id: int) -> dict | None:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, username, role, building_id, created_at
+        FROM staff_users
+        WHERE id=?
+        """,
+        (staff_user_id,),
+    )
+    r = cur.fetchone()
+    conn.close()
+    if not r:
+        return None
+    return {
+        "id": r[0],
+        "username": r[1],
+        "role": r[2],
+        "building_id": r[3],
+        "created_at": r[4],
+    }
+
+def create_poll_db(building_id: int, title: str, description: str, target_group: str, is_anonymous: int, closes_at: str | None, options: list[str]):
+    title = (title or "").strip()
+    description = (description or "").strip()
+    target_group = (target_group or "all").strip()
+    is_anonymous = 1 if int(is_anonymous or 0) else 0
+    closes_at = (closes_at or "").strip() or None
+
+    clean_opts = [o.strip() for o in (options or []) if (o or "").strip()]
+    if len(clean_opts) < 2:
+        return {"ok": False, "error": "need_2_options"}
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        INSERT INTO polls(building_id, title, description, target_group, is_anonymous, closes_at)
+        VALUES(?,?,?,?,?,?)
+        """,
+        (building_id, title, description, target_group, is_anonymous, closes_at),
+    )
+    poll_id = cur.lastrowid
+
+    for opt in clean_opts:
+        cur.execute("INSERT INTO poll_options(poll_id, option_text) VALUES(?,?)", (poll_id, opt))
+
+    conn.commit()
+    conn.close()
+    return {"ok": True, "poll_id": poll_id}
+
+def list_polls_db(building_id: int | None = None, status: str | None = None, limit: int = 100):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    sql = """
+    SELECT id, building_id, title, description, target_group, is_anonymous, status, closes_at, sent_at, created_at
+    FROM polls
+    WHERE 1=1
+    """
+    params = []
+
+    if building_id:
+        sql += " AND building_id=?"
+        params.append(building_id)
+
+    if status:
+        sql += " AND status=?"
+        params.append(status)
+
+    sql += " ORDER BY created_at DESC LIMIT ?"
+    params.append(int(limit))
+
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    conn.close()
+
+    return [
+        {"id": r[0], "building_id": r[1], "title": r[2], "description": r[3], "target_group": r[4],
+         "is_anonymous": r[5], "status": r[6], "closes_at": r[7], "sent_at": r[8], "created_at": r[9]}
+        for r in rows
+    ]
+
+def get_poll_with_options_db(poll_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        SELECT id, building_id, title, description, target_group, is_anonymous, status, closes_at, sent_at, created_at
+        FROM polls WHERE id=?
+        """,
+        (poll_id,),
+    )
+    p = cur.fetchone()
+    if not p:
+        conn.close()
+        return None
+
+    cur.execute("SELECT id, option_text FROM poll_options WHERE poll_id=? ORDER BY id", (poll_id,))
+    opts = cur.fetchall()
+
+    conn.close()
+    return {
+        "id": p[0], "building_id": p[1], "title": p[2], "description": p[3],
+        "target_group": p[4], "is_anonymous": p[5], "status": p[6],
+        "closes_at": p[7],"sent_at": p[8],"created_at": p[9],
+        "options": [{"id": r[0], "text": r[1]} for r in opts],
+    }
+
+def cast_vote_db(poll_id: int, option_id: int, tenant_id: int):
+    """
+    Returns:
+      ok True/False
+      error: already_voted / poll_closed / invalid_option
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT status FROM polls WHERE id=?", (poll_id,))
+    r = cur.fetchone()
+    if not r:
+        conn.close()
+        return {"ok": False, "error": "poll_not_found"}
+    if r[0] != "open":
+        conn.close()
+        return {"ok": False, "error": "poll_closed"}
+
+    cur.execute("SELECT 1 FROM poll_options WHERE id=? AND poll_id=?", (option_id, poll_id))
+    if not cur.fetchone():
+        conn.close()
+        return {"ok": False, "error": "invalid_option"}
+
+    try:
+        cur.execute(
+            "INSERT INTO poll_votes(poll_id, option_id, tenant_id) VALUES(?,?,?)",
+            (poll_id, option_id, tenant_id),
+        )
+        conn.commit()
+    except Exception:
+        conn.close()
+        return {"ok": False, "error": "already_voted"}
+
+    conn.close()
+    return {"ok": True}
+
+def poll_results_db(poll_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT id, option_text FROM poll_options WHERE poll_id=? ORDER BY id", (poll_id,))
+    opts = cur.fetchall()
+
+    cur.execute(
+        """
+        SELECT option_id, COUNT(*)
+        FROM poll_votes
+        WHERE poll_id=?
+        GROUP BY option_id
+        """,
+        (poll_id,),
+    )
+    counts = {row[0]: row[1] for row in cur.fetchall()}
+
+    cur.execute("SELECT COUNT(*) FROM poll_votes WHERE poll_id=?", (poll_id,))
+    total = int(cur.fetchone()[0] or 0)
+
+    conn.close()
+
+    out = []
+    for oid, txt in opts:
+        out.append({"option_id": oid, "text": txt, "votes": int(counts.get(oid, 0))})
+
+    return {"poll_id": poll_id, "total_votes": total, "options": out}
+
+def close_poll_db(poll_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE polls SET status='closed' WHERE id=?", (poll_id,))
+    conn.commit()
+    conn.close()
+    return True
+
+def mark_poll_sent_db(poll_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE polls SET sent_at=datetime('now') WHERE id=? AND (sent_at IS NULL OR sent_at='')", (poll_id,))
+    conn.commit()
+    changed = cur.rowcount
+    conn.close()
+    return changed > 0
+#----------Announcement--------#
+
+def create_announcement_db(building_id: int, title: str, body: str, target_group: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO announcements(building_id, title, body, target_group)
+        VALUES(?,?,?,?)
+        """,
+        (building_id, title.strip(), body.strip(), target_group),
+    )
+    conn.commit()
+    new_id = cur.lastrowid
+    conn.close()
+    return new_id
+
+def list_announcements_db(building_id: int | None = None, limit: int = 50):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    sql = "SELECT id, building_id, title, body, target_group, created_at FROM announcements"
+    params = []
+    if building_id:
+        sql += " WHERE building_id=?"
+        params.append(building_id)
+
+    sql += " ORDER BY created_at DESC LIMIT ?"
+    params.append(int(limit))
+
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {"id": r[0], "building_id": r[1], "title": r[2], "body": r[3], "target_group": r[4], "created_at": r[5]}
+        for r in rows
+    ]
+
+def get_recipients_chat_ids_by_group_db(building_id: int, target_group: str):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    sql = """
+    SELECT chat_id
+    FROM tenants
+    WHERE building_id=?
+      AND chat_id IS NOT NULL
+      AND CAST(chat_id AS INTEGER) > 0
+    """
+    params = [building_id]
+
+    if target_group == "owners":
+        sql += " AND tenant_type='owner'"
+    elif target_group == "renters":
+        sql += " AND tenant_type='rent'"
+
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    conn.close()
+    return [int(r[0]) for r in rows if r[0]]

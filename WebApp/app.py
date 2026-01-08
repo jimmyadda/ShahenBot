@@ -1,5 +1,6 @@
 # WebApp/app.py
 from datetime import date
+from functools import wraps
 import logging
 import os
 import sqlite3
@@ -20,16 +21,29 @@ from flask import (
 from shahenbot_db import (
     approve_payment_db,
     attach_payment_proof_db,
+    cast_vote_db,
     compute_missing_tenant_fields,
+    create_announcement_db,
     create_pending_payment_db,
+    create_poll_db,
+    get_buildings_db,
+    get_due_tenants_db,
     get_payment_by_id_db,
+    get_payments_history_db,
     get_pending_payments_db,
+    get_poll_with_options_db,
+    get_recipients_chat_ids_by_group_db,
     get_tenants_by_building_apartment_db,
     get_tenants_due_this_month_db,
     get_tenants_summary_db,
     init_db,
     get_user_language_db,
     is_fully_registered,
+    list_announcements_db,
+    list_polls_db,
+    mark_poll_sent_db,
+    poll_results_db,
+    reject_payment_db,
     resolve_building_by_street_number_db,
     set_next_payment_date_from_months_db,
     set_user_language_db,
@@ -140,6 +154,34 @@ def require_super_admin():
     if u["role"] != "super_admin":
         abort(403)
     return u
+
+
+def get_staff_scope():
+    staff_user_id = session.get("staff_user_id")
+    if not staff_user_id:
+        return None, None, None
+
+    staff = get_staff_user_by_id_db(int(staff_user_id))
+    if not staff:
+        return None, None, None
+
+    role = staff.get("role")
+    if role == "super_admin":
+        bid = request.args.get("building_id", type=int)
+        return staff, role, bid  # None => all buildings
+    elif role == "building_admin":
+        bid = staff.get("building_id")
+        return staff, role, int(bid) if bid else None
+    return staff, role, None
+
+def admin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        staff, role, bid = get_staff_scope()
+        if not staff:
+            return redirect(url_for("login"))
+        return view(*args, **kwargs)
+    return wrapped
 
 def scoped_building_id(u: dict) -> int | None:
     # super admin sees all buildings (None = no filter)
@@ -755,9 +797,32 @@ def api_payments_attach_proof(payment_id):
 
 @app.get("/admin/payments")
 def admin_payments():
-    building_id = request.args.get("building_id", type=int)
+    # super admin can view all; optional building_id filter
+    building_id = request.args.get("building_id", type=int)  # None => all buildings
+    year = request.args.get("year", type=int)
+    month = request.args.get("month", type=int)
+
+    buildings = get_buildings_db()
+
     payments = get_pending_payments_db(building_id)
-    return render_template("admin_payments.html", payments=payments)
+    due_now = get_due_tenants_db(building_id, days_ahead=0)
+    due_soon = get_due_tenants_db(building_id, days_ahead=14)
+    history = get_payments_history_db(building_id, year, month)
+
+    total_sum = sum((p["amount_cents"] or 0) for p in history) / 100.0
+
+    return render_template(
+        "admin_payments.html",
+        buildings=buildings,
+        building_id=building_id,
+        payments=payments,
+        due_now=due_now,
+        due_soon=due_soon,
+        history=history,
+        total_sum=total_sum,
+        year=year,
+        month=month,
+    )
 
 @app.post("/admin/payments/<int:payment_id>/approve")
 def admin_approve_payment(payment_id):
@@ -894,10 +959,165 @@ def api_update_tenant_name(tenant_id: int):
 
     return jsonify({"ok": True}), 200
 
+#--------Announcement----#
+@app.get("/admin/announcements")
+@admin_required
+def admin_announcements():
+    staff, role, building_id_scope = get_staff_scope()
+
+    buildings = get_buildings_db() if role == "super_admin" else []
+    items = list_announcements_db(building_id_scope)
+
+    return render_template(
+        "admin_announcements.html",
+        staff=staff,
+        role=role,
+        buildings=buildings,
+        building_id=building_id_scope,
+        items=items,
+    )
 
 
+@app.post("/admin/announcements/create")
+@admin_required
+def admin_announcements_create():
+    staff, role, building_id_scope = get_staff_scope()
+
+    building_id = request.form.get("building_id", type=int)
+    if role == "building_admin":
+        building_id = building_id_scope
+
+    title = (request.form.get("title") or "").strip()
+    body = (request.form.get("body") or "").strip()
+    target_group = (request.form.get("target_group") or "all").strip()
+
+    if not building_id or not title or not body:
+        flash("חסרים פרטים", "danger")
+        return redirect(url_for("admin_announcements", building_id=building_id_scope))
+
+    create_announcement_db(building_id, title, body, target_group)
+
+    chat_ids = get_recipients_chat_ids_by_group_db(building_id, target_group)
+    text = f"📢 {title}\n\n{body}"
+
+    sent = 0
+    for cid in chat_ids:
+        send_telegram_message(cid, text)
+        sent += 1
+
+    flash(f"ההודעה נשלחה ({sent} נמענים).", "success")
+    return redirect(url_for("admin_announcements", building_id=building_id))
+
+# POLLS 
+@app.get("/admin/polls")
+@admin_required
+def admin_polls():
+    staff, role, building_id_scope = get_staff_scope()
+    buildings = get_buildings_db() if role == "super_admin" else []
+    polls = list_polls_db(building_id_scope, status=None)
+    return render_template("admin_polls.html", staff=staff, role=role, buildings=buildings, building_id=building_id_scope, polls=polls)
+
+@app.post("/admin/polls/create")
+@admin_required
+def admin_polls_create():
+    staff, role, building_id_scope = get_staff_scope()
+
+    building_id = request.form.get("building_id", type=int)
+    if role == "building_admin":
+        building_id = building_id_scope
+
+    title = request.form.get("title") or ""
+    description = request.form.get("description") or ""
+    target_group = request.form.get("target_group") or "all"
+    is_anonymous = request.form.get("is_anonymous", "1")
+    closes_at = request.form.get("closes_at") or ""
+
+    # options from textarea: each line option
+    raw_opts = (request.form.get("options") or "").splitlines()
+    options = [o.strip() for o in raw_opts if o.strip()]
+
+    if not building_id:
+        flash("חסר building_id", "danger")
+        return redirect(url_for("admin_polls", building_id=building_id_scope))
+
+    res = create_poll_db(building_id, title, description, target_group, int(is_anonymous), closes_at, options)
+    if not res.get("ok"):
+        flash("יש להזין לפחות 2 אפשרויות הצבעה", "danger")
+        return redirect(url_for("admin_polls", building_id=building_id))
+
+    flash(f"הצבעה נוצרה (#{res['poll_id']}).", "success")
+    return redirect(url_for("admin_polls", building_id=building_id))
+
+@app.post("/admin/polls/<int:poll_id>/send")
+@admin_required
+def admin_polls_send(poll_id: int):
+    staff, role, building_id_scope = get_staff_scope()
+
+    poll = get_poll_with_options_db(poll_id)
+    if not poll:
+        flash("הצבעה לא נמצאה", "danger")
+        return redirect(url_for("admin_polls", building_id=building_id_scope))
+
+    if role == "building_admin" and int(poll["building_id"]) != int(building_id_scope):
+        abort(403)
+
+    # ✅ אם כבר נשלח פעם אחת – לא שולחים שוב, עוברים לתוצאות
+    if poll.get("sent_at"):
+        flash("ההצבעה כבר נשלחה. מציג תוצאות.", "info")
+        return redirect(url_for("admin_poll_results", poll_id=poll_id))
+
+    building_id = int(poll["building_id"])
+    chat_ids = get_recipients_chat_ids_by_group_db(building_id, poll["target_group"])
+
+    text = f"🗳️ הצבעה חדשה:\n{poll['title']}\n\n{poll.get('description') or ''}\n\nבחר/י אפשרות:"
+    buttons = [[{"text": opt["text"], "callback_data": f"poll_{poll_id}_{opt['id']}"}] for opt in poll["options"]]
+
+    for cid in chat_ids:
+        send_telegram_message(cid, text, buttons=buttons)
+
+    # מסמן שנשלח
+    mark_poll_sent_db(poll_id)
+
+    flash(f"נשלח לדיירים ({len(chat_ids)}).", "success")
+    return redirect(url_for("admin_poll_results", poll_id=poll_id))
 
 
+@app.post("/api/polls/vote")
+def api_polls_vote():
+    data = request.get_json(force=True) or {}
+    chat_id = int(data.get("chat_id") or 0)
+    poll_id = int(data.get("poll_id") or 0)
+    option_id = int(data.get("option_id") or 0)
+
+    tenant = get_tenant_by_chat_id_db(chat_id)
+    if not tenant:
+        return jsonify({"ok": False, "error": "not_registered"}), 403
+
+    poll = get_poll_with_options_db(poll_id)
+    if not poll:
+        return jsonify({"ok": False, "error": "poll_not_found"}), 404
+
+    if int(poll["building_id"]) != int(tenant["building_id"]):
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+
+    res = cast_vote_db(poll_id, option_id, int(tenant["id"]))
+    return jsonify(res), (200 if res.get("ok") else 400)
+    
+@app.get("/admin/polls/<int:poll_id>/results")
+@admin_required
+def admin_poll_results(poll_id: int):
+    staff, role, building_id_scope = get_staff_scope()
+
+    poll = get_poll_with_options_db(poll_id)
+    if not poll:
+        flash("הצבעה לא נמצאה", "danger")
+        return redirect(url_for("admin_polls", building_id=building_id_scope))
+
+    if role == "building_admin" and int(poll["building_id"]) != int(building_id_scope):
+        abort(403)
+
+    results = poll_results_db(poll_id)
+    return render_template("admin_poll_results.html", poll=poll, results=results)
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5001"))

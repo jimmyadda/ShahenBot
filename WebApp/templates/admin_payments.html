@@ -86,6 +86,40 @@
 </head>
 <body class="pb-4">
 
+    <form method="get" class="row g-2 align-items-end mb-3">
+  <div class="col-md-4">
+    <label class="form-label">בניין</label>
+    <select name="building_id" class="form-select">
+      <option value="">כל הבניינים</option>
+      {% for b in buildings %}
+        <option value="{{b.id}}" {% if building_id==b.id %}selected{% endif %}>
+          {{b.city}} {{b.street}} {{b.number}}{% if b.name %} ({{b.name}}){% endif %}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="col-md-2">
+    <label class="form-label">שנה</label>
+    <input type="number" class="form-control" name="year" value="{{year or ''}}" placeholder="2025">
+  </div>
+
+  <div class="col-md-2">
+    <label class="form-label">חודש</label>
+    <select name="month" class="form-select">
+      <option value="">הכל</option>
+      {% for m in range(1,13) %}
+        <option value="{{m}}" {% if month==m %}selected{% endif %}>{{m}}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="col-md-4 d-flex gap-2">
+    <button class="btn btn-primary mt-4">סנן</button>
+    <a class="btn btn-outline-secondary mt-4" href="/admin/payments">איפוס</a>
+  </div>
+</form>
+
 <div class="container py-3" dir="rtl">
 
   <div class="d-flex align-items-center justify-content-between mb-3">
@@ -164,6 +198,124 @@
     </div>
   {% endif %}
 </div>
+
+<!-- Due payments / Overdue -->
+<div class="card mt-4">
+  <div class="card-header">
+    תשלומים קרובים / באיחור
+  </div>
+  <div class="card-body">
+    {% if (not due_now) and (not due_soon) %}
+      <div class="alert alert-success m-0">אין דיירים עם תשלום קרוב/באיחור.</div>
+    {% else %}
+      <div class="row g-3">
+        <div class="col-md-6">
+          <h6 class="mb-2">באיחור (עד היום)</h6>
+          <ul class="list-group">
+            {% for t in due_now %}
+              <li class="list-group-item d-flex justify-content-between">
+                <span>{{t.name}} – דירה {{t.apartment}}</span>
+                <span class="badge bg-danger badge-pill">{{t.next_payment_date}}</span>
+              </li>
+            {% endfor %}
+            {% if not due_now %}
+              <li class="list-group-item text-muted">אין</li>
+            {% endif %}
+          </ul>
+        </div>
+
+        <div class="col-md-6">
+          <h6 class="mb-2">קרוב (14 ימים)</h6>
+          <ul class="list-group">
+            {% for t in due_soon %}
+              <li class="list-group-item d-flex justify-content-between">
+                <span>{{t.name}} – דירה {{t.apartment}}</span>
+                <span class="badge bg-warning text-dark badge-pill">{{t.next_payment_date}}</span>
+              </li>
+            {% endfor %}
+            {% if not due_soon %}
+              <li class="list-group-item text-muted">אין</li>
+            {% endif %}
+          </ul>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Payments history -->
+<div class="card mt-4">
+  <div class="card-header">
+    היסטוריית תשלומים מאושרים (לפי חודש/שנה)
+  </div>
+  <div class="card-body">
+
+    <form method="get" class="row g-2 align-items-end mb-3">
+      <input type="hidden" name="building_id" value="{{building_id}}">
+
+      <div class="col-auto">
+        <label class="filter-label">שנה</label>
+        <select name="year" class="form-select">
+          <option value="">הכל</option>
+          {% for y in range(2023, 2031) %}
+            <option value="{{y}}" {% if year==y %}selected{% endif %}>{{y}}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-auto">
+        <label class="filter-label">חודש</label>
+        <select name="month" class="form-select">
+          <option value="">הכל</option>
+          {% for m in range(1,13) %}
+            <option value="{{m}}" {% if month==m %}selected{% endif %}>{{m}}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-auto">
+        <button class="btn btn-primary">סנן</button>
+        <a class="btn btn-outline-secondary" href="/admin/payments?building_id={{building_id}}">איפוס</a>
+      </div>
+    </form>
+
+    <div class="table-responsive">
+      <table class="table table-sm table-striped align-middle">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>דייר</th>
+            <th>דירה</th>
+            <th>סכום</th>
+            <th>שיטה</th>
+            <th>תאריך</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in history %}
+            <tr>
+              <td>{{p.id}}</td>
+              <td>{{p.tenant_name}}</td>
+              <td>{{p.apartment}}</td>
+              <td>{{ "%.2f"|format((p.amount_cents or 0)/100) }} {{ p.currency or "ILS" }}</td>
+              <td>{{p.method}}</td>
+              <td>{{p.created_at}}</td>
+            </tr>
+          {% endfor %}
+          {% if not history %}
+            <tr><td colspan="6" class="text-muted text-center">אין תשלומים מאושרים עבור הפילטר.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="text-end fw-bold">
+      סה״כ לתצוגה הנוכחית: {{ "%.2f"|format(total_sum) }} ₪
+    </div>
+
+  </div>
+</div>
+
 
 <!-- Modal: months -->
 <div class="modal fade" id="approveModal" tabindex="-1" aria-hidden="true">

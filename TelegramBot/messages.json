@@ -63,7 +63,15 @@
     "payment_choose_method": "בחר/י אמצעי תשלום:",
     "payment_method_bank": "🏦 העברה בנקאית",
     "payment_method_bit": "📲 Bit / PayBox",
-    "payment_send_proof_now": "מעולה 👍\nאנא שלח/י עכשיו צילום מסך / קובץ של אישור התשלום."
+    "payment_send_proof_now": "מעולה 👍\nאנא שלח/י עכשיו צילום מסך / קובץ של אישור התשלום.",
+        "payment_enter_amount": "כמה שילמת? (לדוגמה: 300 או 300.50)",
+    "payment_amount_invalid": "לא הצלחתי להבין את הסכום. כתבו מספר בלבד (לדוגמה: 300 או 300.50).",
+    "payment_amount_received_send_proof": "קיבלתי 👍 עכשיו שלח/י צילום מסך / קובץ של אישור התשלום.",
+    "poll_vote_success": "✅ ההצבעה נקלטה. תודה!",
+"poll_already_voted": "כבר הצבעת בהצבעה הזו.",
+"poll_closed": "ההצבעה כבר נסגרה.",
+"poll_vote_failed": "משהו השתבש בהצבעה. נסה/י שוב."
+
   },
   "en": {
     "start": "Hi 👋 I'm the building assistant bot.\nChoose language and then you can report a problem.",
@@ -129,9 +137,14 @@
     "payment_choose_method": "Choose a payment method:",
     "payment_method_bank": "🏦 Bank transfer",
     "payment_method_bit": "📲 Bit / PayBox",
-    "payment_send_proof_now": "Great 👍\nNow please send a screenshot / file as proof of payment."
-  
-
+    "payment_send_proof_now": "Great 👍\nNow please send a screenshot / file as proof of payment.",
+        "payment_enter_amount": "How much did you pay? (example: 300 or 300.50)",
+    "payment_amount_invalid": "I couldn't understand the amount. Please send only a number (e.g., 300 or 300.50).",
+    "payment_amount_received_send_proof": "Got it 👍 Now please send a screenshot / file as proof of payment.",
+    "poll_vote_success": "✅ Your vote was recorded. Thanks!",
+"poll_already_voted": "You already voted in this poll.",
+"poll_closed": "This poll is closed.",
+"poll_vote_failed": "Something went wrong. Please try again."
   },
   "fr": {
     "start": "Salut 👋 je suis le bot de l’immeuble.\nChoisissez une langue puis vous pourrez signaler un problème.",
@@ -197,6 +210,14 @@
     "payment_choose_method": "Choisissez un moyen de paiement :",
     "payment_method_bank": "🏦 Virement bancaire",
     "payment_method_bit": "📲 Bit / PayBox",
-    "payment_send_proof_now": "Parfait 👍\nVeuillez envoyer maintenant une capture d’écran / un fichier comme justificatif."
+    "payment_send_proof_now": "Parfait 👍\nVeuillez envoyer maintenant une capture d’écran / un fichier comme justificatif.",
+        "payment_enter_amount": "Quel montant avez-vous payé ? (ex. : 300 ou 300,50)",
+    "payment_amount_invalid": "Je n’ai pas compris le montant. Envoyez uniquement un nombre (ex. : 300 ou 300,50).",
+    "payment_amount_received_send_proof": "Parfait 👍 Envoyez maintenant une capture d’écran / un fichier comme justificatif.",
+    "poll_vote_success": "✅ Votre vote a été enregistré. Merci !",
+"poll_already_voted": "Vous avez déjà voté à ce sondage.",
+"poll_closed": "Ce sondage est terminé.",
+"poll_vote_failed": "Une erreur s’est produite. Réessayez."
+
   }
 }

@@ -117,22 +117,49 @@
 
         <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
             <ul class="navbar-nav gap-2">
+
                 <li class="nav-item">
-                    <a class="nav-link active fw-semibold" aria-current="page"
+                    <a class="nav-link fw-semibold {% if request.endpoint=='admin_dashboard' %}active{% endif %}"
                        href="{{ url_for('admin_dashboard') }}">
                         🎫 Tickets
                     </a>
                 </li>
+
                 <li class="nav-item">
-                    <a class="nav-link fw-semibold"
+                    <a class="nav-link fw-semibold {% if request.endpoint=='admin_tenants' %}active{% endif %}"
                        href="{{ url_for('admin_tenants') }}">
                         👥 Tenants
                     </a>
                 </li>
+
+                <li class="nav-item">
+                    <a class="nav-link fw-semibold {% if request.endpoint=='admin_announcements' %}active{% endif %}"
+                       href="{{ url_for('admin_announcements') }}">
+                        📢 Announcements
+                    </a>
+                </li>
+
+                <li class="nav-item">
+                    <a class="nav-link fw-semibold {% if request.endpoint in ['admin_polls','admin_poll_results'] %}active{% endif %}"
+                       href="{{ url_for('admin_polls') }}">
+                        🗳️ Polls
+                    </a>
+                </li>
+
+                {% if request.endpoint=='admin_payments' or request.endpoint.startswith('admin_payments') %}
+                {% endif %}
+                <li class="nav-item">
+                    <a class="nav-link fw-semibold {% if request.endpoint.startswith('admin_payments') %}active{% endif %}"
+                       href="{{ url_for('admin_payments') }}">
+                        💳 Payments
+                    </a>
+                </li>
+
             </ul>
         </div>
     </div>
 </nav>
+
 
 <div class="container">
         <div class="d-flex justify-content-between align-items-center mb-4">

@@ -268,6 +268,49 @@ def api_update_tenant_name(tenant_id: int, name: str) -> bool:
     )
     return r.status_code == 200
 
+async def handle_poll_vote(update: Update, context: ContextTypes.DEFAULT_TYPE, poll_id: int, option_id: int):
+    query = update.callback_query
+    await query.answer()
+
+    chat_id = query.message.chat_id
+    lang = api_get_user_language(chat_id)
+
+    try:
+        resp = requests.post(
+            f"{API_BASE_URL}/api/polls/vote",
+            json={"chat_id": chat_id, "poll_id": poll_id, "option_id": option_id},
+            timeout=10,
+        )
+
+        if not resp.ok:
+            data = {}
+            try:
+                data = resp.json() or {}
+            except Exception:
+                pass
+
+            err = data.get("error")
+            if err == "already_voted":
+                await query.message.reply_text(get_text(lang, "poll_already_voted"))
+            elif err == "poll_closed":
+                await query.message.reply_text(get_text(lang, "poll_closed"))
+            elif err == "not_registered":
+                await query.message.reply_text(get_text(lang, "must_register_first"))
+            else:
+                await query.message.reply_text(get_text(lang, "poll_vote_failed"))
+            return
+
+        # הצלחה: אפשר גם לערוך את ההודעה המקורית כדי "לנעול" את הכפתורים
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+
+        await query.message.reply_text(get_text(lang, "poll_vote_success"))
+
+    except Exception:
+        await query.message.reply_text(get_text(lang, "poll_vote_failed"))
+
 # ───────────── Keyword-based category detection ─────────────
 
 def detect_category_from_text(text: str, lang: str):
@@ -301,7 +344,26 @@ def detect_category_from_text(text: str, lang: str):
 
     return None, None
 
+def parse_amount_to_cents(s: str):
+    s = (s or "").strip()
+    if not s:
+        return None
 
+    s = s.replace("₪", "").replace("ils", "").replace("ILS", "").strip()
+    s = s.replace(",", ".")
+    cleaned = "".join(ch for ch in s if ch.isdigit() or ch == ".")
+    if cleaned.count(".") > 1 or cleaned == "":
+        return None
+
+    try:
+        val = float(cleaned)
+    except Exception:
+        return None
+
+    if val <= 0 or val > 100000:
+        return None
+
+    return int(round(val * 100))
 # ───────────── Telegram Handlers ─────────────
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -502,6 +564,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("dup_ticket_id", None)
         return
     
+    if data.startswith("poll_"):
+        parts = data.split("_")
+        if len(parts) == 3:
+            poll_id = int(parts[1])
+            option_id = int(parts[2])
+            await handle_poll_vote(update, context, poll_id, option_id)
+        return   
     # /register flow – user chooses tenant from list
     if data.startswith("regtenant_"):
         tenant_id = int(data.split("_")[1])
@@ -537,6 +606,52 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_type = chat.type
     #add name to auto register
     # MUST be first in text_handler
+     # ✅ PAYMENT: awaiting amount MUST be first (before name/register/tickets)
+    if context.user_data.get("payment_step") == "awaiting_amount":
+        cents = parse_amount_to_cents(text)
+        if cents is None:
+            await msg.reply_text(get_text(lang, "payment_amount_invalid"))
+            return
+
+        method = context.user_data.get("payment_method") or "bank_transfer"
+
+        try:
+            resp = requests.post(
+                f"{API_BASE_URL}/api/payments/create_pending",
+                json={"chat_id": chat_id, "amount_cents": cents, "method": method},
+                timeout=10,
+            )
+            logger.info("PAY: create_pending status=%s text=%s", resp.status_code, resp.text)
+
+            if not resp.ok:
+                await msg.reply_text(get_text(lang, "payment_error_try_again"))
+                context.user_data.pop("payment_step", None)
+                context.user_data.pop("payment_method", None)
+                return
+
+            data = resp.json() or {}
+            payment_id = data.get("payment_id")
+            logger.info("PAY: payment_id=%s", payment_id)
+
+            if not payment_id:
+                await msg.reply_text(get_text(lang, "payment_error_try_again"))
+                context.user_data.pop("payment_step", None)
+                context.user_data.pop("payment_method", None)
+                return
+
+            context.user_data["payment_step"] = "awaiting_proof"
+            context.user_data["payment_id"] = payment_id
+
+            await msg.reply_text(get_text(lang, "payment_amount_received_send_proof"))
+            return
+
+        except Exception as e:
+            logger.exception("PAY: create_pending exception: %s", e)
+            await msg.reply_text(get_text(lang, "payment_error_try_again"))
+            context.user_data.pop("payment_step", None)
+            context.user_data.pop("payment_method", None)
+            return
+        
     if context.user_data.get("awaiting_name"):
         tenant_id = context.user_data.get("name_tenant_id")
         name = text.strip()
@@ -1012,42 +1127,16 @@ async def handle_pay_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
 
     # Create pending payment in Flask
+    # After selecting payment method:
+    context.user_data["payment_step"] = "awaiting_amount"
+    context.user_data["payment_method"] = method  # bank_transfer / bit
 
     try:
-        resp = requests.post(
-            f"{API_BASE_URL}/api/payments/create_pending",
-            json={"chat_id": chat_id, "amount_cents": 30000, "method": method},
-            timeout=10,
-        )
-        logger.info("PAY: create_pending status=%s text=%s", resp.status_code, resp.text)
+        await query.edit_message_text(get_text(lang, "payment_enter_amount"))
+    except Exception:
+        await query.message.reply_text(get_text(lang, "payment_enter_amount"))
 
-        if not resp.ok:
-            await query.message.reply_text(get_text(lang, "payment_error_try_again"))
-            return
-
-        data = resp.json() or {}
-        payment_id = data.get("payment_id")
-        logger.info("PAY: payment_id=%s", payment_id)
-
-        if not payment_id:
-            await query.message.reply_text(get_text(lang, "payment_error_try_again"))
-            return
-
-        context.user_data["payment_step"] = "awaiting_proof"
-        context.user_data["payment_id"] = payment_id
-        context.user_data["payment_method"] = method
-
-        # ✅ Try edit first, if fails - send normal message
-        try:
-            await query.edit_message_text(get_text(lang, "payment_send_proof_now"))
-        except Exception as e:
-            logger.exception("PAY: edit_message_text failed: %s", e)
-            await query.message.reply_text(get_text(lang, "payment_send_proof_now"))
-
-    except Exception as e:
-        logger.exception("PAY: create_pending exception: %s", e)
-        await query.message.reply_text(get_text(lang, "payment_error_try_again"))
-        return
+    return
 
 async def payment_proof_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message

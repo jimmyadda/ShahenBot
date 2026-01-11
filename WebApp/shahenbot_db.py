@@ -1,5 +1,6 @@
 # shahenbot_db.py
 from datetime import date, datetime, timedelta, timezone
+import secrets
 import sqlite3
 from pathlib import Path
 from datetime import datetime, timezone
@@ -203,7 +204,28 @@ def init_db():
         CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_tenant_period
         ON payments(tenant_id, period_ym);""")
 
+    cur.execute(
+        """
+       CREATE TABLE IF NOT EXISTS tenant_portal_tokens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id INTEGER NOT NULL,
+  token TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,      -- ISO datetime
+  used_at TEXT,                  -- ISO datetime (optional)
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+        """
+    )
 
+    cur.execute(
+        """
+     CREATE INDEX IF NOT EXISTS ix_tpt_tenant ON tenant_portal_tokens(tenant_id);
+""")
+    
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_tpt_token ON tenant_portal_tokens(token); """)
+    
         # In case tickets existed before without tenant_id – add column if missing
     cur.execute("PRAGMA table_info(tickets)")
     cols = [r[1] for r in cur.fetchall()]
@@ -305,28 +327,29 @@ def get_tenant_by_id_db(tenant_id: int) -> dict | None:
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT id, name, apartment, tenant_type, email,
-               payment_type, next_payment_date, parking_slots, chat_id
+        SELECT id, building_id, name, apartment, tenant_type, email, payment_type,
+               next_payment_date, parking_slots, chat_id
         FROM tenants
         WHERE id = ?
         """,
         (tenant_id,),
     )
-    row = cur.fetchone()
+    r = cur.fetchone()
     conn.close()
-    if not row:
+    if not r:
         return None
 
     return {
-        "id": row[0],
-        "name": row[1],
-        "apartment": row[2],
-        "tenant_type": row[3],
-        "email": row[4],
-        "payment_type": row[5],
-        "next_payment_date": row[6],
-        "parking_slots": row[7],
-        "chat_id": row[8],
+        "id": r[0],
+        "building_id": r[1],
+        "name": r[2],
+        "apartment": r[3],
+        "tenant_type": r[4],
+        "email": r[5],
+        "payment_type": r[6],
+        "next_payment_date": r[7],
+        "parking_slots": r[8],
+        "chat_id": r[9],
     }
 
 def get_tenant_by_chat_id_db(chat_id: int) -> dict | None:
@@ -1742,3 +1765,152 @@ def get_recipients_chat_ids_by_group_db(building_id: int, target_group: str):
     rows = cur.fetchall()
     conn.close()
     return [int(r[0]) for r in rows if r[0]]
+
+
+#--- tenants portal----#
+
+def create_tenant_portal_token_db(tenant_id: int, ttl_minutes: int = 30) -> dict:
+    """
+    Creates a one-time-ish login token (we still allow reuse until expiry unless you enforce used_at).
+    """
+    token = secrets.token_urlsafe(32)
+    expires = datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)
+    expires_at = expires.isoformat()
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO tenant_portal_tokens(tenant_id, token, expires_at)
+        VALUES(?,?,?)
+        """,
+        (tenant_id, token, expires_at),
+    )
+    conn.commit()
+    conn.close()
+    return {"token": token, "expires_at": expires_at}
+
+
+def get_tenant_portal_token_db(token: str) -> dict | None:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, tenant_id, token, expires_at, used_at, created_at
+        FROM tenant_portal_tokens
+        WHERE token=?
+        """,
+        (token,),
+    )
+    r = cur.fetchone()
+    conn.close()
+    if not r:
+        return None
+    return {
+        "id": r[0],
+        "tenant_id": r[1],
+        "token": r[2],
+        "expires_at": r[3],
+        "used_at": r[4],
+        "created_at": r[5],
+    }
+
+
+def mark_tenant_portal_token_used_db(token_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE tenant_portal_tokens SET used_at=datetime('now') WHERE id=?",
+        (token_id,),
+    )
+    conn.commit()
+    conn.close()
+
+
+def is_token_expired(expires_at_iso: str) -> bool:
+    try:
+        # stored in UTC isoformat
+        exp = datetime.fromisoformat(expires_at_iso.replace("Z", "+00:00"))
+        return datetime.now(timezone.utc) > exp
+    except Exception:
+        return True
+
+
+def is_tenant_fully_registered(tenant: dict) -> bool:
+    # התאמה  למינימום שיש לך: בניין + דירה + שם + chat
+    if not tenant:
+        return False
+    if int(tenant.get("building_id") or 0) <= 0:
+        return False
+    if not (tenant.get("apartment") or "").strip():
+        return False
+    if not (tenant.get("name") or "").strip() or (tenant.get("name") or "").startswith("New Tenant"):
+        return False
+    if int(tenant.get("chat_id") or 0) <= 0:
+        return False
+    return True
+
+
+# ------- Dashboard data fetchers (תתאים אם שמות הטבלאות אצלך שונים) -------
+
+def list_tenant_tickets_db(chat_id: int, limit: int = 20):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, category, description, status, created_at
+        FROM tickets
+        WHERE chat_id=?
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (chat_id, int(limit)),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {"id": r[0], "category": r[1], "description": r[2], "status": r[3], "created_at": r[4]}
+        for r in rows
+    ]
+
+
+def list_tenant_payments_db(tenant_id: int, limit: int = 20):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, amount_cents, currency, method, status, created_at
+        FROM payments
+        WHERE tenant_id=?
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (tenant_id, int(limit)),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {"id": r[0], "amount_cents": r[1], "currency": r[2], "method": r[3], "status": r[4], "created_at": r[5]}
+        for r in rows
+    ]
+
+
+def list_building_announcements_db(building_id: int, limit: int = 5):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, title, body, target_group, created_at
+        FROM announcements
+        WHERE building_id=?
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (building_id, int(limit)),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {"id": r[0], "title": r[1], "body": r[2], "target_group": r[3], "created_at": r[4]}
+        for r in rows
+    ]

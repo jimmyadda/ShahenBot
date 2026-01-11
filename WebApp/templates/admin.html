@@ -145,9 +145,6 @@
                         🗳️ Polls
                     </a>
                 </li>
-
-                {% if request.endpoint=='admin_payments' or request.endpoint.startswith('admin_payments') %}
-                {% endif %}
                 <li class="nav-item">
                     <a class="nav-link fw-semibold {% if request.endpoint.startswith('admin_payments') %}active{% endif %}"
                        href="{{ url_for('admin_payments') }}">

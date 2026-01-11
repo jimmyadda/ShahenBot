@@ -70,7 +70,10 @@
     "poll_vote_success": "✅ ההצבעה נקלטה. תודה!",
 "poll_already_voted": "כבר הצבעת בהצבעה הזו.",
 "poll_closed": "ההצבעה כבר נסגרה.",
-"poll_vote_failed": "משהו השתבש בהצבעה. נסה/י שוב."
+"poll_vote_failed": "משהו השתבש בהצבעה. נסה/י שוב.",
+    "portal_need_register": "כדי לפתוח פורטל דיירים צריך הרשמה מלאה (שם, דירה, בניין).",
+    "portal_link_ready": "✅ הנה קישור כניסה לפורטל הדיירים (תקף ל־30 דקות):",
+    "portal_open_btn": "פתח/י פורטל דיירים"
 
   },
   "en": {
@@ -144,7 +147,10 @@
     "poll_vote_success": "✅ Your vote was recorded. Thanks!",
 "poll_already_voted": "You already voted in this poll.",
 "poll_closed": "This poll is closed.",
-"poll_vote_failed": "Something went wrong. Please try again."
+"poll_vote_failed": "Something went wrong. Please try again.",
+    "portal_need_register": "To open the tenant portal you must complete registration (name, apartment, building).",
+    "portal_link_ready": "✅ Here is your tenant portal link (valid for 30 minutes):",
+    "portal_open_btn": "Open Tenant Portal"
   },
   "fr": {
     "start": "Salut 👋 je suis le bot de l’immeuble.\nChoisissez une langue puis vous pourrez signaler un problème.",
@@ -217,7 +223,10 @@
     "poll_vote_success": "✅ Votre vote a été enregistré. Merci !",
 "poll_already_voted": "Vous avez déjà voté à ce sondage.",
 "poll_closed": "Ce sondage est terminé.",
-"poll_vote_failed": "Une erreur s’est produite. Réessayez."
+"poll_vote_failed": "Une erreur s’est produite. Réessayez.",
+    "portal_need_register": "Pour accéder au portail, l’inscription doit être complète (nom, appartement, immeuble).",
+    "portal_link_ready": "✅ Voici votre lien vers le portail (valable 30 minutes) :",
+    "portal_open_btn": "Ouvrir le portail"
 
   }
 }

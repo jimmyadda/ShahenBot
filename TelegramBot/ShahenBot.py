@@ -73,6 +73,14 @@ def build_main_menu_keyboard(chat_id: int, lang: str):
         InlineKeyboardButton(get_text(lang, "btn_report"), callback_data="report"),
     ]
 
+    # ✅ פורטל דיירים (רק לרשום מלא)
+    if tenant and int(tenant.get("building_id") or 0) > 0:
+        name_ok = (tenant.get("name") or "").strip() and not (tenant.get("name") or "").startswith("New Tenant")
+        apt_ok = (tenant.get("apartment") or "").strip()
+        if name_ok and apt_ok:
+            actions_row.append([
+                InlineKeyboardButton(get_text(lang, "portal_open_btn"), callback_data="portal_open")
+            ])
     if not has_tenant:
         actions_row.append(
             InlineKeyboardButton(get_text(lang, "btn_register"), callback_data="register")
@@ -310,6 +318,19 @@ async def handle_poll_vote(update: Update, context: ContextTypes.DEFAULT_TYPE, p
 
     except Exception:
         await query.message.reply_text(get_text(lang, "poll_vote_failed"))
+
+def api_create_portal_link(chat_id: int):
+    r = requests.post(
+        f"{API_BASE_URL}/api/tenant_portal/create_link",
+        json={"chat_id": chat_id},
+        timeout=10,
+    )
+    if not r.ok:
+        try:
+            return {"ok": False, **(r.json() or {})}
+        except Exception:
+            return {"ok": False, "error": "http_error"}
+    return r.json() or {}
 
 # ───────────── Keyword-based category detection ─────────────
 
@@ -564,6 +585,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("dup_ticket_id", None)
         return
     
+    if data == "portal_open":
+        res = api_create_portal_link(chat_id)
+        if not res.get("ok"):
+            await query.message.reply_text(get_text(lang, "portal_need_register"))
+            return
+
+        url = res.get("url")
+        # URL button (לא callback_data!)
+        keyboard = [[InlineKeyboardButton(get_text(lang, "portal_open_btn"), url=url)]]
+        await query.message.reply_text(get_text(lang, "portal_link_ready"), reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
     if data.startswith("poll_"):
         parts = data.split("_")
         if len(parts) == 3:
@@ -1079,15 +1112,16 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = api_get_user_language(chat_id)
 
     text = (
-        "🛠️ *ShahenBot – Available Commands:*\n\n"
+        "ShahenBot – Available Commands:\n\n"
         "/start – Main menu\n"
         "/register – Link your apartment\n"
+        "/tenantsportal – Open the Tenant Portal (magic link)\n"
         "/mytickets – Show your tickets\n"
         "/help – Show this help menu\n\n"
         "You can also:\n"
         "• Send a message describing a problem\n"
         "• Send a photo with a caption\n"
-        "• Use the buttons to report noise / parking / water / elevator issues\n"
+        "• Use the buttons to report noise / parking / water / elevator issues"
     )
 
     await update.message.reply_text(text, parse_mode="Markdown")
@@ -1189,7 +1223,33 @@ async def payment_proof_handler(update: Update, context: ContextTypes.DEFAULT_TY
     await msg.reply_text(get_text(lang, "payment_proof_received_pending_admin"))
 
 
+async def tenants_portal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.effective_message  # ✅ works even if update.message is None
+    chat_id = update.effective_chat.id
+    lang = api_get_user_language(chat_id)
 
+    tenant = api_get_tenant_by_chat_id(chat_id)
+
+    # must be fully registered
+    if not tenant or int(tenant.get("building_id") or 0) <= 0:
+        await msg.reply_text(get_text(lang, "portal_need_register"))
+        return
+
+    name_ok = (tenant.get("name") or "").strip() and not (tenant.get("name") or "").startswith("New Tenant")
+    apt_ok = (tenant.get("apartment") or "").strip()
+    if not (name_ok and apt_ok):
+        await msg.reply_text(get_text(lang, "portal_need_register"))
+        return
+
+    res = api_create_portal_link(chat_id)
+    if not res or not res.get("ok") or not res.get("url"):
+        await msg.reply_text(get_text(lang, "portal_error"))
+        return
+
+    url = res["url"]
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton(get_text(lang, "portal_open_btn"), url=url)]])
+
+    await msg.reply_text(get_text(lang, "portal_link_ready"), reply_markup=kb)
 
 
 def main():
@@ -1211,6 +1271,7 @@ def main():
     app.add_handler(MessageHandler((filters.PHOTO | filters.Document.ALL) & ~filters.COMMAND, payment_proof_handler))
     app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, photo_handler))
     app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(CommandHandler("tenantsportal", tenants_portal_command))
     app.add_error_handler(error_handler)
 
     print(f"ShahenBot is running. API base: {API_BASE_URL}")

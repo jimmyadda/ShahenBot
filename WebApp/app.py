@@ -26,6 +26,7 @@ from shahenbot_db import (
     create_announcement_db,
     create_pending_payment_db,
     create_poll_db,
+    create_tenant_portal_token_db,
     get_buildings_db,
     get_due_tenants_db,
     get_payment_by_id_db,
@@ -33,15 +34,23 @@ from shahenbot_db import (
     get_pending_payments_db,
     get_poll_with_options_db,
     get_recipients_chat_ids_by_group_db,
+    get_tenant_by_id_db,
+    get_tenant_portal_token_db,
     get_tenants_by_building_apartment_db,
     get_tenants_due_this_month_db,
     get_tenants_summary_db,
     init_db,
     get_user_language_db,
     is_fully_registered,
+    is_tenant_fully_registered,
+    is_token_expired,
     list_announcements_db,
+    list_building_announcements_db,
     list_polls_db,
+    list_tenant_payments_db,
+    list_tenant_tickets_db,
     mark_poll_sent_db,
+    mark_tenant_portal_token_used_db,
     poll_results_db,
     reject_payment_db,
     resolve_building_by_street_number_db,
@@ -1118,6 +1127,100 @@ def admin_poll_results(poll_id: int):
 
     results = poll_results_db(poll_id)
     return render_template("admin_poll_results.html", poll=poll, results=results)
+
+#---Portal---#
+
+
+# ---- Tenant session helpers ----
+def tenant_login_required(view):
+    from functools import wraps
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("tenant_id"):
+            return redirect(url_for("tenant_login_info"))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+@app.get("/tenant")
+def tenant_login_info():
+    return render_template("tenant_login_info.html")
+
+
+@app.get("/tenant/login")
+def tenant_login():
+    token = (request.args.get("token") or "").strip()
+    if not token:
+        return redirect(url_for("tenant_login_info"))
+
+    rec = get_tenant_portal_token_db(token)
+    if not rec:
+        flash("לינק לא תקין או פג תוקף.", "danger")
+        return redirect(url_for("tenant_login_info"))
+
+    if is_token_expired(rec["expires_at"]):
+        flash("הלינק פג תוקף. בקש/י לינק חדש בבוט.", "warning")
+        return redirect(url_for("tenant_login_info"))
+
+    # אפשר לאכוף "חד פעמי" אמיתי:
+    # if rec["used_at"]: ...
+    session["tenant_id"] = int(rec["tenant_id"])
+    mark_tenant_portal_token_used_db(int(rec["id"]))
+
+    return redirect(url_for("tenant_dashboard"))
+
+
+@app.get("/tenant/logout")
+def tenant_logout():
+    session.pop("tenant_id", None)
+    return redirect(url_for("tenant_login_info"))
+
+
+@app.get("/tenant/dashboard")
+@tenant_login_required
+def tenant_dashboard():
+    tenant_id = int(session["tenant_id"])
+    tenant = get_tenant_by_id_db(tenant_id)
+    if not tenant:
+        session.pop("tenant_id", None)
+        return redirect(url_for("tenant_login_info"))
+    building_id = int(tenant.get("building_id") or 0)
+    if building_id <= 0:
+        flash("חסר building_id לדייר. בקש/י לינק חדש בבוט אחרי השלמת רישום.", "warning")
+        return redirect(url_for("tenant_login_info"))
+
+    tickets = list_tenant_tickets_db(int(tenant.get("chat_id") or 0), limit=20)
+    payments = list_tenant_payments_db(tenant_id, limit=20)
+    announcements = list_building_announcements_db(int(tenant["building_id"]), limit=5)
+
+    return render_template(
+        "tenant_dashboard.html",
+        tenant=tenant,
+        tickets=tickets,
+        payments=payments,
+        announcements=announcements,
+    )
+
+
+# ---- API: bot asks for portal link ----
+@app.post("/api/tenant_portal/create_link")
+def api_tenant_portal_create_link():
+    data = request.get_json(force=True) or {}
+    chat_id = int(data.get("chat_id") or 0)
+    tenant = get_tenant_by_chat_id_db(chat_id)
+
+    if not tenant or not is_tenant_fully_registered(tenant):
+        return jsonify({"ok": False, "error": "not_fully_registered"}), 403
+
+    rec = create_tenant_portal_token_db(int(tenant["id"]), ttl_minutes=30)
+
+    # חשוב: BASE_URL ציבורי (Railway) כדי שהלינק יעבוד מחוץ ללוקאל
+    base_url = (request.host_url or "").rstrip("/")
+    url = f"{base_url}/tenant/login?token={rec['token']}"
+
+    return jsonify({"ok": True, "url": url, "expires_at": rec["expires_at"]})
+
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5001"))

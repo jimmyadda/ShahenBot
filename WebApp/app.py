@@ -1150,24 +1150,29 @@ def tenant_login_info():
 @app.get("/tenant/login")
 def tenant_login():
     token = (request.args.get("token") or "").strip()
+    print("TENANT_LOGIN HIT token=", token)
+
     if not token:
-        return redirect(url_for("tenant_login_info"))
+        print("TENANT_LOGIN: no token -> /tenant")
+        return redirect("/tenant")
 
     rec = get_tenant_portal_token_db(token)
+    print("TENANT_LOGIN rec=", rec)
+
     if not rec:
-        flash("לינק לא תקין או פג תוקף.", "danger")
-        return redirect(url_for("tenant_login_info"))
+        print("TENANT_LOGIN: rec not found -> /tenant")
+        return redirect("/tenant")
 
     if is_token_expired(rec["expires_at"]):
-        flash("הלינק פג תוקף. בקש/י לינק חדש בבוט.", "warning")
-        return redirect(url_for("tenant_login_info"))
+        print("TENANT_LOGIN: expired -> /tenant")
+        return redirect("/tenant")
 
-    # אפשר לאכוף "חד פעמי" אמיתי:
-    # if rec["used_at"]: ...
     session["tenant_id"] = int(rec["tenant_id"])
     mark_tenant_portal_token_used_db(int(rec["id"]))
+    print("TENANT_LOGIN: session tenant_id set =", session.get("tenant_id"))
 
-    return redirect(url_for("tenant_dashboard"))
+    # ✅ force dashboard
+    return redirect("/tenant/dashboard")
 
 
 @app.get("/tenant/logout")
@@ -1184,21 +1189,17 @@ def tenant_dashboard():
     if not tenant:
         session.pop("tenant_id", None)
         return redirect(url_for("tenant_login_info"))
-    building_id = int(tenant.get("building_id") or 0)
-    if building_id <= 0:
-        flash("חסר building_id לדייר. בקש/י לינק חדש בבוט אחרי השלמת רישום.", "warning")
-        return redirect(url_for("tenant_login_info"))
 
+    announcements = list_building_announcements_db(int(tenant.get("building_id") or 0), limit=5)
     tickets = list_tenant_tickets_db(int(tenant.get("chat_id") or 0), limit=20)
     payments = list_tenant_payments_db(tenant_id, limit=20)
-    announcements = list_building_announcements_db(int(tenant["building_id"]), limit=5)
 
     return render_template(
         "tenant_dashboard.html",
         tenant=tenant,
+        announcements=announcements,
         tickets=tickets,
         payments=payments,
-        announcements=announcements,
     )
 
 

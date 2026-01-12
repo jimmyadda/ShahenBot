@@ -1247,6 +1247,7 @@ async def tenants_portal_command(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     url = res["url"]
+    print('URL- ',url)
     kb = InlineKeyboardMarkup([[InlineKeyboardButton(get_text(lang, "portal_open_btn"), url=url)]])
 
     await msg.reply_text(get_text(lang, "portal_link_ready"), reply_markup=kb)

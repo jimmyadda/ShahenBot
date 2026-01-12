@@ -55,11 +55,6 @@ def get_text(lang: str, key: str) -> str:
     return data.get(key, key)
 
 def build_main_menu_keyboard(chat_id: int, lang: str):
-    """
-    Build main inline keyboard: language row + actions row.
-    Shows 'Register' button until user is linked to a tenant.
-    """
-    # Need this helper to check if user already linked to tenant
     tenant = api_get_tenant_by_chat_id(chat_id)
     has_tenant = tenant is not None
 
@@ -73,20 +68,24 @@ def build_main_menu_keyboard(chat_id: int, lang: str):
         InlineKeyboardButton(get_text(lang, "btn_report"), callback_data="report"),
     ]
 
-    # ✅ פורטל דיירים (רק לרשום מלא)
+    rows = [lang_row, actions_row]
+
+    # פורטל דיירים
     if tenant and int(tenant.get("building_id") or 0) > 0:
         name_ok = (tenant.get("name") or "").strip() and not (tenant.get("name") or "").startswith("New Tenant")
         apt_ok = (tenant.get("apartment") or "").strip()
         if name_ok and apt_ok:
-            actions_row.append([
+            rows.append([
                 InlineKeyboardButton(get_text(lang, "portal_open_btn"), callback_data="portal_open")
             ])
-    if not has_tenant:
-        actions_row.append(
-            InlineKeyboardButton(get_text(lang, "btn_register"), callback_data="register")
-        )
 
-    return InlineKeyboardMarkup([lang_row, actions_row])
+    # Register button 
+    if not has_tenant:
+        rows.append([
+            InlineKeyboardButton(get_text(lang, "btn_register"), callback_data="register")
+        ])
+
+    return InlineKeyboardMarkup(rows)
 
 # ───────────── API helpers ─────────────
 
@@ -1221,7 +1220,6 @@ async def payment_proof_handler(update: Update, context: ContextTypes.DEFAULT_TY
     context.user_data.pop("payment_method", None)
 
     await msg.reply_text(get_text(lang, "payment_proof_received_pending_admin"))
-
 
 async def tenants_portal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message  # ✅ works even if update.message is None

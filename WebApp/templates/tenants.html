@@ -211,7 +211,8 @@
                                     data-payment_type="{{ t.payment_type or '' }}"
                                     data-next_payment_date="{{ t.next_payment_date or '' }}"
                                     data-parking_slots="{{ t.parking_slots if t.parking_slots is not none else '' }}"
-                                    data-update_url="{{ url_for('admin_tenants', tenant_id=t.id) }}"
+                                    data-update_url="{{ url_for('admin_update_tenant', tenant_id=t.id) }}"
+                                    data-building_id="{{ t.building_id or '' }}"
                                 >
                                     ✏️ עריכה
                                 </button>
@@ -394,6 +395,10 @@
             const next_payment_date = button.getAttribute('data-next_payment_date') || '';
             const parking_slots = button.getAttribute('data-parking_slots') || '';
             const update_url = button.getAttribute('data-update_url');
+            const building_id = button.getAttribute('data-building_id') || '';
+            const buildingSelect = editTenantModal.querySelector('select[name="building_id"]');
+            if (buildingSelect) buildingSelect.value = building_id;
+
 
             // Set form action
             editTenantForm.action = update_url;

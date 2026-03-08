@@ -73,7 +73,27 @@
 "poll_vote_failed": "משהו השתבש בהצבעה. נסה/י שוב.",
     "portal_need_register": "כדי לפתוח פורטל דיירים צריך הרשמה מלאה (שם, דירה, בניין).",
     "portal_link_ready": "✅ הנה קישור כניסה לפורטל הדיירים (תקף ל־30 דקות):",
-    "portal_open_btn": "פתח/י פורטל דיירים"
+    "portal_open_btn": "פתח/י פורטל דיירים",
+      "btn_open_building": "🏢 פתיחת בניין / ועד",
+  "btn_verify_admin": "🔑 יש לי קוד ועד",
+
+  "req_ask_city": "נא להזין עיר:",
+  "req_ask_street": "נא להזין רחוב:",
+  "req_ask_number": "נא להזין מספר בניין:",
+  "req_ask_name": "נא להזין שם מלא:",
+  "req_ask_phone": "נא להזין טלפון:",
+  "req_ask_email": "נא להזין אימייל:",
+
+  "req_sent_success": "הבקשה נשלחה בהצלחה. לאחר אישור תקבל קוד ועד.",
+  "req_sent_error": "אירעה שגיאה בשליחת הבקשה.",
+
+  "verify_ask_email": "נא להזין את האימייל שאיתו נרשמת בבקשה:",
+  "verify_ask_code": "נא להזין קוד ועד:",
+  "verify_success": "אומתת כועד בהצלחה ✅",
+  "verify_fail": "קוד או אימייל לא תקינים.",
+   "verify_error": "אירעה שגיאה באימות הקוד.",
+   "server_comm_error": "שגיאת תקשורת עם השרת.",
+"request_generic_error": "אירעה שגיאה. נסה שוב מאוחר יותר."
 
   },
   "en": {
@@ -150,7 +170,27 @@
 "poll_vote_failed": "Something went wrong. Please try again.",
     "portal_need_register": "To open the tenant portal you must complete registration (name, apartment, building).",
     "portal_link_ready": "✅ Here is your tenant portal link (valid for 30 minutes):",
-    "portal_open_btn": "Open Tenant Portal"
+    "portal_open_btn": "Open Tenant Portal",
+      "btn_open_building": "🏢 Open Building / Committee",
+  "btn_verify_admin": "🔑 I Have an Admin Code",
+
+  "req_ask_city": "Please enter city:",
+  "req_ask_street": "Please enter street:",
+  "req_ask_number": "Please enter building number:",
+  "req_ask_name": "Please enter full name:",
+  "req_ask_phone": "Please enter phone number:",
+  "req_ask_email": "Please enter email:",
+
+  "req_sent_success": "Request sent successfully. You will receive an admin code after approval.",
+  "req_sent_error": "An error occurred while sending the request.",
+
+  "verify_ask_email": "Please enter the email used in the request:",
+  "verify_ask_code": "Please enter admin code:",
+  "verify_success": "You are now verified as building admin ✅",
+  "verify_fail": "Invalid email or admin code.",
+  "verify_error": "Error while verifying the admin code.",
+  "server_comm_error": "Server communication error.",
+"request_generic_error": "An error occurred. Please try again later."
   },
   "fr": {
     "start": "Salut 👋 je suis le bot de l’immeuble.\nChoisissez une langue puis vous pourrez signaler un problème.",
@@ -226,7 +266,27 @@
 "poll_vote_failed": "Une erreur s’est produite. Réessayez.",
     "portal_need_register": "Pour accéder au portail, l’inscription doit être complète (nom, appartement, immeuble).",
     "portal_link_ready": "✅ Voici votre lien vers le portail (valable 30 minutes) :",
-    "portal_open_btn": "Ouvrir le portail"
+    "portal_open_btn": "Ouvrir le portail",
+      "btn_open_building": "🏢 Ouvrir un immeuble / Syndic",
+  "btn_verify_admin": "🔑 J’ai un code administrateur",
+
+  "req_ask_city": "Veuillez saisir la ville :",
+  "req_ask_street": "Veuillez saisir la rue :",
+  "req_ask_number": "Veuillez saisir le numéro d’immeuble :",
+  "req_ask_name": "Veuillez saisir votre nom complet :",
+  "req_ask_phone": "Veuillez saisir votre numéro de téléphone :",
+  "req_ask_email": "Veuillez saisir votre email :",
+
+  "req_sent_success": "Demande envoyée avec succès. Vous recevrez un code administrateur après validation.",
+  "req_sent_error": "Une erreur est survenue lors de l’envoi de la demande.",
+
+  "verify_ask_email": "Veuillez saisir l’email utilisé lors de la demande :",
+  "verify_ask_code": "Veuillez saisir le code administrateur :",
+  "verify_success": "Vous êtes maintenant vérifié comme administrateur ✅",
+  "verify_fail": "Email ou code administrateur invalide.",
+  "verify_error": "Erreur lors de la vérification du code.",
+  "server_comm_error": "Erreur de communication avec le serveur.",
+"request_generic_error": "Une erreur est survenue. Veuillez réessayer plus tard."
 
   }
 }

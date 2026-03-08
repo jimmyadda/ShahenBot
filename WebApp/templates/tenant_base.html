@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}Tenant Portal{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="{{ url_for('static', filename='css/tenant_v2.css') }}" rel="stylesheet">
+</head>
+<body>
+
+<div class="sb-layout">
+  <aside class="sb-sidebar">
+    <div class="sb-brand">🌐 פורטל דיירים</div>
+
+    <div class="sb-userbox">
+      <div class="sb-hello">
+        שלום, <b>{{ (current_tenant.name if current_tenant and current_tenant.name else "דייר") }}</b>
+      </div>
+      {% if current_tenant %}
+        <div class="sb-sub">
+          דירה {{ current_tenant.apartment }}
+        </div>
+      {% endif %}
+    </div>
+
+    <nav class="sb-nav">
+      <a class="sb-link {% if request.endpoint=='tenant_dashboard' %}active{% endif %}"
+         href="{{ url_for('tenant_dashboard') }}">🏠 דשבורד</a>
+    </nav>
+
+    <div class="sb-footer">
+      <a class="sb-link danger" href="{{ url_for('tenant_logout') }}">🚪 התנתקות</a>
+    </div>
+  </aside>
+
+  <main class="sb-main">
+    <div class="sb-topbar">
+      <div class="sb-page-title">{% block page_title %}{% endblock %}</div>
+    </div>
+
+    <div class="sb-content">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

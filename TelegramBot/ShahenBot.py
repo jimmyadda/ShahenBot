@@ -66,10 +66,13 @@ def build_main_menu_keyboard(chat_id: int, lang: str):
 
     actions_row = [
         InlineKeyboardButton(get_text(lang, "btn_report"), callback_data="report"),
+        InlineKeyboardButton(get_text(lang, "btn_open_building"), callback_data="open_building_request"),
+        InlineKeyboardButton(get_text(lang, "btn_verify_admin"), callback_data="verify_admin")
     ]
 
     rows = [lang_row, actions_row]
-
+   
+   
     # פורטל דיירים
     if tenant and int(tenant.get("building_id") or 0) > 0:
         name_ok = (tenant.get("name") or "").strip() and not (tenant.get("name") or "").startswith("New Tenant")
@@ -427,7 +430,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=keyboard,
         )
         return
+    # ---- Open building request flow ----
+    if data == "open_building_request":
+        context.user_data.clear()
+        context.user_data["building_request_step"] = "city"
+        await query.edit_message_text(get_text(lang, "req_ask_city"))
+        return
 
+    # ---- Verify admin flow ----
+    if data == "verify_admin":
+        context.user_data.clear()
+        context.user_data["verify_step"] = "email"
+        await query.edit_message_text(get_text(lang, "verify_ask_email"))
+        return
     # Manual "report" flow
     if data == "report":
         keyboard = [
@@ -637,6 +652,104 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = api_get_user_language(chat_id)
     chat_type = chat.type
     #add name to auto register
+    # ==============================
+    # Building Request Flow (Committee / New Building)
+    # ==============================
+    req_step = context.user_data.get("building_request_step")
+
+    if req_step == "city":
+        context.user_data["req_city"] = text.strip()
+        context.user_data["building_request_step"] = "street"
+        await msg.reply_text(get_text(lang, "req_ask_street"))
+        return
+
+    if req_step == "street":
+        context.user_data["req_street"] = text.strip()
+        context.user_data["building_request_step"] = "number"
+        await msg.reply_text(get_text(lang, "req_ask_number"))
+        return
+
+    if req_step == "number":
+        context.user_data["req_number"] = text.strip()
+        context.user_data["building_request_step"] = "name"
+        await msg.reply_text(get_text(lang, "req_ask_name"))
+        return
+
+    if req_step == "name":
+        context.user_data["req_name"] = text.strip()
+        context.user_data["building_request_step"] = "phone"
+        await msg.reply_text(get_text(lang, "req_ask_phone"))
+        return
+
+    if req_step == "phone":
+        context.user_data["req_phone"] = text.strip()
+        context.user_data["building_request_step"] = "email"
+        await msg.reply_text(get_text(lang, "req_ask_email"))
+        return
+
+    if req_step == "email":
+        context.user_data["req_email"] = text.strip().lower()
+
+        payload = {
+            "city": context.user_data.get("req_city", ""),
+            "street": context.user_data.get("req_street", ""),
+            "number": context.user_data.get("req_number", ""),
+            "contact_name": context.user_data.get("req_name", ""),
+            "contact_phone": context.user_data.get("req_phone", ""),
+            "contact_email": context.user_data.get("req_email", ""),
+            # אופציונלי: אם תרצה לתעד מי שלח מהבוט
+            # "telegram_chat_id": chat_id,
+        }
+
+        try:
+            resp = requests.post(
+                f"{API_BASE_URL}/api/building_requests",
+                json=payload,
+                timeout=10,
+            )
+            if resp.ok:
+                await msg.reply_text(get_text(lang, "req_sent_success"))
+            else:
+                await msg.reply_text(get_text(lang, "req_sent_error"))
+        except Exception:
+            await msg.reply_text(get_text(lang, "server_comm_error"))
+
+        context.user_data.clear()
+        return
+
+    # ==============================
+    # Verify Admin Flow (email + invite_code)
+    # ==============================
+    verify_step = context.user_data.get("verify_step")
+
+    if verify_step == "email":
+        context.user_data["verify_email"] = text.strip().lower()
+        context.user_data["verify_step"] = "code"
+        await msg.reply_text(get_text(lang, "verify_ask_code"))
+        return
+
+    if verify_step == "code":
+        email = (context.user_data.get("verify_email") or "").strip().lower()
+        code = text.strip()
+
+        try:
+            resp = requests.post(
+                f"{API_BASE_URL}/api/buildings/verify_invite",
+                json={"email": email, "invite_code": code, "chat_id": chat_id},
+                timeout=10,
+            )
+
+            if resp.ok:
+                await msg.reply_text(get_text(lang, "verify_success"))
+            else:
+                # אפשר להסתכל על resp.json() ולהציג הודעות שונות לפי error code בעתיד
+                await msg.reply_text(get_text(lang, "verify_fail"))
+
+        except Exception:
+            await msg.reply_text(get_text(lang, "verify_error"))
+
+        context.user_data.clear()
+        return    
     # MUST be first in text_handler
      # ✅ PAYMENT: awaiting amount MUST be first (before name/register/tickets)
     if context.user_data.get("payment_step") == "awaiting_amount":
@@ -683,7 +796,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data.pop("payment_step", None)
             context.user_data.pop("payment_method", None)
             return
-        
+       
     if context.user_data.get("awaiting_name"):
         tenant_id = context.user_data.get("name_tenant_id")
         name = text.strip()

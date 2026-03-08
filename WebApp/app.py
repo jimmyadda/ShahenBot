@@ -3,7 +3,9 @@ from datetime import date
 from functools import wraps
 import logging
 import os
+import secrets
 import sqlite3
+import string
 from flask import Response, flash, session, abort
 from dotenv import load_dotenv
 import requests
@@ -19,6 +21,8 @@ from flask import (
     url_for,
 )
 from shahenbot_db import (
+    approve_building_request_atomic_db,
+    approve_building_request_db,
     approve_payment_db,
     attach_payment_proof_db,
     cast_vote_db,
@@ -27,6 +31,9 @@ from shahenbot_db import (
     create_pending_payment_db,
     create_poll_db,
     create_tenant_portal_token_db,
+    delete_building_request_db,
+    get_building_by_unique_db,
+    get_building_request_db,
     get_buildings_db,
     get_due_tenants_db,
     get_payment_by_id_db,
@@ -46,14 +53,18 @@ from shahenbot_db import (
     is_token_expired,
     list_announcements_db,
     list_building_announcements_db,
+    list_building_requests_db,
     list_polls_db,
     list_tenant_payments_db,
     list_tenant_tickets_db,
     mark_poll_sent_db,
+    mark_request_approved_db,
+    mark_request_rejected_db,
     mark_tenant_portal_token_used_db,
     poll_results_db,
     reject_payment_db,
     resolve_building_by_street_number_db,
+    save_building_request_db,
     set_next_payment_date_from_months_db,
     set_user_language_db,
     create_ticket_db,
@@ -78,6 +89,8 @@ from shahenbot_db import (
     create_staff_user_db,
     get_staff_user_by_username_db,
     get_staff_user_by_id_db,
+    upgrade_user_to_building_admin_db,
+    verify_admin_invite_db,
     verify_staff_password,
     list_staff_users_db,
     update_building_db, 
@@ -206,11 +219,28 @@ def login():
 def login_post():
     username = request.form.get("username", "")
     password = request.form.get("password", "")
+    email = request.form.get("email", "")
+    invite_code = (request.form.get("invite_code") or "").strip()  # New
 
     user = get_staff_user_by_username_db(username)
     if not user or not verify_staff_password(user, password):
         return render_template("login.html", error="Invalid username or password")
+        # 2) אם הוזן invite_code – נבדוק התאמה ונשדרג לוועד
+    if invite_code:
+        b = verify_admin_invite_db(email, invite_code)
+        if not b:
+            flash("Invite code is invalid for this email.", "warning")
+            # אפשר לבחור: להמשיך כ-user רגיל או לחסום login
+            # אני ממליץ: להמשיך login רגיל אבל בלי שדרוג:
+        else:
+            upgrade_user_to_building_admin_db(
+                user_id=int(user["id"]),
+                building_id=int(b["id"]),
+                email=email
+            )
+            flash("You are now verified as building admin ✅", "success")
 
+            
     session["staff_user_id"] = user["id"]
     return redirect(url_for("admin_dashboard"))
 
@@ -1141,6 +1171,13 @@ def tenant_login_required(view):
         return view(*args, **kwargs)
     return wrapped
 
+@app.context_processor
+def inject_current_user():
+    tenant_user = None
+    tenant_id = session.get("tenant_id")
+    if tenant_id:
+        tenant_user = get_tenant_by_id_db(int(tenant_id))
+    return dict(current_tenant=tenant_user)
 
 @app.get("/tenant")
 def tenant_login_info():
@@ -1174,7 +1211,6 @@ def tenant_login():
     # ✅ force dashboard
     return redirect("/tenant/dashboard")
 
-
 @app.get("/tenant/logout")
 def tenant_logout():
     session.pop("tenant_id", None)
@@ -1201,6 +1237,127 @@ def tenant_dashboard():
         tickets=tickets,
         payments=payments,
     )
+
+
+#-----On boarding---#
+def get_current_staff_user():
+    user_id = session.get("staff_user_id")
+    if not user_id:
+        return None
+    return get_staff_user_by_id_db(int(user_id))
+
+def generate_building_code(length=6):
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(secrets.choice(chars) for _ in range(length))
+
+
+def generate_temp_password(length: int = 10) -> str:
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+    
+@app.get("/onboard")
+def onboard_form():
+    return render_template("onboard.html")
+
+@app.post("/onboard")
+def onboard_submit():
+    save_building_request_db(
+        city=request.form.get("city"),
+        street=request.form.get("street"),
+        number=request.form.get("number"),
+        contact_name=request.form.get("contact_name"),
+        contact_email=request.form.get("contact_email"),
+        contact_phone=request.form.get("contact_phone"),
+        apartments_count=request.form.get("apartments_count"),
+        notes=request.form.get("notes"),
+    )
+    return render_template("onboard_success.html")
+
+@app.get("/admin/building_requests")
+@admin_required
+def admin_building_requests():
+    user = get_current_staff_user()  
+    if not user or user.get("role") != "super_admin":
+        return redirect(url_for("admin_dashboard"))
+
+    requests = list_building_requests_db()
+
+    return render_template(
+        "admin_building_requests.html",
+        requests=requests,
+        current_user=user
+    )
+
+@app.post("/admin/building_requests/<int:req_id>/approve")
+@admin_required
+def approve_building_request(req_id: int):
+    user = get_current_staff_user()
+    if not user or user.get("role") != "super_admin":
+        return redirect(url_for("admin_dashboard"))
+
+    try:
+        res = approve_building_request_atomic_db(
+            req_id=req_id,
+            approved_by=str(user.get("id") or "super_admin")
+        )
+        if not res:
+            flash("Request already handled or not found.", "warning")
+            return redirect(url_for("admin_building_requests"))
+
+        building_id, building_code, admin_email, invite_code = res
+        from Mailer import send_email
+        subject = "Shahen – Building Approved"
+        body = f"""
+        Hello,
+
+        Your building request has been approved.
+
+        Building Code:
+        {building_code}
+
+        Admin Verification Code:
+        {invite_code}
+
+        Open ShahenBot and choose:
+        "I Have an Admin Code"
+
+        Email: {admin_email}
+        Code: {invite_code}
+        """
+
+        send_email(admin_email, subject, body)
+
+
+        # ❌ לא למחוק את הבקשה – פשוט status=approved (מומלץ)
+        # אם אתה מתעקש למחוק, תעשה כאן בלבד, אחרי commit.
+
+        flash(
+            f"Building approved. Admin email: {admin_email} Invite code: {invite_code}",
+            "success"
+        )
+        return redirect(url_for("admin_building_requests"))
+
+    except Exception as e:
+        flash(f"Approval failed ❌ {e}", "danger")
+        return redirect(url_for("admin_building_requests"))
+
+
+
+@app.post("/admin/building_requests/<int:req_id>/reject")
+@admin_required
+def reject_building_request(req_id: int):
+    if current_user.role != "super_admin":
+        return redirect(url_for("admin_dashboard"))
+
+    req = get_building_request_db(req_id)
+    if not req or req.get("status") != "pending":
+        flash("Request not found / not pending", "warning")
+        return redirect(url_for("admin_building_requests"))
+
+    mark_request_rejected_db(req_id)
+
+    flash("Rejected ❌", "info")
+    return redirect(url_for("admin_building_requests"))
 
 
 # ---- API: bot asks for portal link ----

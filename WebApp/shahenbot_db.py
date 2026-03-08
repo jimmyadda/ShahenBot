@@ -216,6 +216,62 @@ def init_db():
 );
         """
     )
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS building_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            city TEXT,
+            street TEXT,
+            number TEXT,
+            contact_name TEXT,
+            contact_email TEXT,
+            contact_phone TEXT,
+            apartments_count INTEGER,
+            notes TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    #Building added fields
+     # linkage cols
+    ensure_column(cur, "building_requests", "approved_at", "TEXT")
+    ensure_column(cur, "building_requests", "approved_by", "TEXT")
+    ensure_column(cur, "building_requests", "approved_building_code", "TEXT")
+    ensure_column(cur, "building_requests", "approved_building_id", "INTEGER")
+
+    # ---- buildings ----
+    ensure_column(cur, "buildings", "building_code", "TEXT")
+    ensure_column(cur, "buildings", "admin_email", "TEXT")
+    ensure_column(cur, "buildings", "admin_invite_code", "TEXT")
+    ensure_column(cur, "buildings", "admin_email_verified", "INTEGER")  # 0/1
+
+    #staff_users
+    ensure_column(cur, "staff_users", "email", "TEXT")
+    ensure_column(cur, "staff_users", "role", "TEXT")
+    ensure_column(cur, "staff_users", "building_id", "INTEGER")
+    ensure_column(cur, "staff_users", "telegram_user_id", "TEXT")
+
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_users_email
+        ON staff_users(email)
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_users_building_id
+        ON staff_users(building_id)
+    """)
+    # Indexes
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_buildings_code
+        ON buildings(building_code)
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_buildings_unique_address
+        ON buildings(city, street, number)
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_buildings_admin_email
+        ON buildings(admin_email)
+    """)
 
     cur.execute(
         """
@@ -1037,6 +1093,61 @@ def get_tenants_by_building_apartment_db(
 
     return tenants
 
+def create_building_request_db(city: str, street: str, number: str, contact_name: str, contact_email: str, contact_phone: str, notes: str = ""):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO building_requests (city, street, number, contact_name, contact_email, contact_phone, notes, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+    """, (
+        (city or "").strip(),
+        (street or "").strip(),
+        (number or "").strip(),
+        (contact_name or "").strip(),
+        (contact_email or "").strip().lower(),
+        (contact_phone or "").strip(),
+        (notes or "").strip()
+    ))
+    conn.commit()
+    req_id = cur.lastrowid
+    conn.close()
+    return req_id
+
+
+def upgrade_telegram_user_to_building_admin(telegram_user_id: str, email: str, invite_code: str):
+    """
+    Verifies (email+invite_code), then sets user role=building_admin and building_id.
+    Returns building_id or None.
+    """
+    b = verify_admin_invite_db(email, invite_code)
+    if not b:
+        return None
+
+    building_id = int(b["id"])
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # find user by telegram_user_id; create if missing
+    cur.execute("SELECT id FROM users WHERE telegram_user_id = ? LIMIT 1", (str(telegram_user_id),))
+    u = cur.fetchone()
+    if not u:
+        cur.execute("""
+            INSERT INTO users (email, role, building_id, telegram_user_id)
+            VALUES (?, 'building_admin', ?, ?)
+        """, (email.strip().lower(), building_id, str(telegram_user_id)))
+    else:
+        cur.execute("""
+            UPDATE users
+            SET email = COALESCE(email, ?),
+                role = 'building_admin',
+                building_id = ?
+            WHERE id = ?
+        """, (email.strip().lower(), building_id, int(u["id"])))
+
+    conn.commit()
+    conn.close()
+    return building_id
 # ─────────── Staff helpers ───────────
 
 def create_staff_user_db(username: str, password: str, role: str, building_id: int | None) -> dict:
@@ -1914,3 +2025,500 @@ def list_building_announcements_db(building_id: int, limit: int = 5):
         {"id": r[0], "title": r[1], "body": r[2], "target_group": r[3], "created_at": r[4]}
         for r in rows
     ]
+
+
+#------------------OnBoarding------------------#
+def save_building_request_db(
+    city: str | None,
+    street: str | None,
+    number: str | None,
+    contact_name: str | None,
+    contact_email: str | None,
+    contact_phone: str | None,
+    apartments_count: int | str | None,
+    notes: str | None,
+) -> int:
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # normalize
+    city = (city or "").strip() or None
+    street = (street or "").strip() or None
+    number = (number or "").strip() or None
+    contact_name = (contact_name or "").strip() or None
+    contact_email = (contact_email or "").strip().lower() or None
+    contact_phone = (contact_phone or "").strip() or None
+    notes = (notes or "").strip() or None
+
+    try:
+        apc = int(apartments_count) if apartments_count not in (None, "") else None
+    except Exception:
+        apc = None
+
+    cur.execute(
+        """
+        INSERT INTO building_requests
+        (city, street, number, contact_name, contact_email, contact_phone, apartments_count, notes, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+        """,
+        (city, street, number, contact_name, contact_email, contact_phone, apc, notes),
+    )
+
+    req_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return int(req_id)
+
+def list_building_requests_db(status: str = "pending") -> list[dict]:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, city, street, number, contact_name, contact_email, contact_phone,
+               apartments_count, notes, status, created_at
+        FROM building_requests
+        WHERE status=?
+        ORDER BY id DESC
+        """,
+        (status,),
+    )
+    rows = cur.fetchall()
+    conn.close()
+
+    out = []
+    for r in rows:
+        out.append({
+            "id": r[0],
+            "city": r[1],
+            "street": r[2],
+            "number": r[3],
+            "contact_name": r[4],
+            "contact_email": r[5],
+            "contact_phone": r[6],
+            "apartments_count": r[7],
+            "notes": r[8],
+            "status": r[9],
+            "created_at": r[10],
+        })
+    return out
+
+def get_building_request_db(req_id: int) -> dict | None:
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        SELECT id, city, street, number, contact_name, contact_email, contact_phone,
+               apartments_count, notes, status, created_at
+        FROM building_requests
+        WHERE id = ?
+        """,
+        (int(req_id),),
+    )
+    r = cur.fetchone()
+    conn.close()
+    if not r:
+        return None
+
+    return {
+        "id": r[0],
+        "city": r[1],
+        "street": r[2],
+        "number": r[3],
+        "contact_name": r[4],
+        "contact_email": r[5],
+        "contact_phone": r[6],
+        "apartments_count": r[7],
+        "notes": r[8],
+        "status": r[9],
+        "created_at": r[10],
+    }
+
+
+def mark_request_approved_db(req_id: int) -> bool:
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        UPDATE building_requests
+        SET status='approved'
+        WHERE id=? AND status='pending'
+        """,
+        (req_id,)
+    )
+
+    changed = cur.rowcount > 0
+    conn.commit()
+    conn.close()
+    return changed
+
+def mark_request_rejected_db(req_id: int, reason: str | None = None):
+    # אפשר גם להוסיף עמודה reason אם תרצה. כרגע רק מסמן rejected.
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE building_requests SET status='rejected' WHERE id=?", (int(req_id),))
+    conn.commit()
+    conn.close()
+
+def get_building_by_code_db(code: str) -> dict | None:
+    code = (code or "").strip().upper()
+    if not code:
+        return None
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, city, street, number, building_code
+        FROM buildings
+        WHERE UPPER(building_code) = ?
+        """,
+        (code,),
+    )
+    r = cur.fetchone()
+    conn.close()
+
+    if not r:
+        return None
+
+    return {
+        "id": r[0],
+        "city": r[1],
+        "street": r[2],
+        "number": r[3],
+        "building_code": r[4],
+    }
+
+def get_building_by_unique_db(city: str | None, street: str, number: str) -> dict | None:
+    city = (city or "").strip()
+    street = (street or "").strip()
+    number = (number or "").strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, city, street, number, name, is_active, created_at
+        FROM buildings
+        WHERE COALESCE(city,'')=? AND street=? AND number=?
+        """,
+        (city, street, number),
+    )
+    r = cur.fetchone()
+    conn.close()
+    if not r:
+        return None
+
+    return {
+        "id": r[0],
+        "city": r[1],
+        "street": r[2],
+        "number": r[3],
+        "name": r[4],
+        "is_active": r[5],
+        "created_at": r[6],
+    }
+
+def generate_building_code(cur, prefix="B", length=8):
+    for _ in range(50):
+        code = f"{prefix}-{secrets.token_hex(length // 2).upper()}"
+        cur.execute("SELECT 1 FROM buildings WHERE building_code = ?", (code,))
+        if not cur.fetchone():
+            return code
+    raise RuntimeError("Could not generate unique building_code")
+
+def table_columns(cur, table: str) -> set[str]:
+    cur.execute(f"PRAGMA table_info({table})")
+    return {r[1] for r in cur.fetchall()}
+
+def generate_invite_code_6() -> str:    
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+def create_building_db(*, city: str, street: str, number: str, building_code: str | None = None):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    if not building_code:
+        building_code = generate_building_code(cur)
+
+    cur.execute("""
+        INSERT INTO buildings (building_code, city, street, number)
+        VALUES (?, ?, ?, ?)
+    """, (building_code, city, street, number))
+
+    conn.commit()
+    return cur.lastrowid
+
+
+def ensure_building_code_index(cur):
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_buildings_building_code
+        ON buildings(building_code)
+    """)
+
+def delete_building_request_db(req_id: int) -> None:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM building_requests WHERE id=?", (int(req_id),))
+    conn.commit()
+    conn.close()
+
+def get_building_request_db(req_id: int) -> dict | None:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, city, street, number, contact_name, contact_email, contact_phone,
+               apartments_count, notes, status, created_at
+        FROM building_requests
+        WHERE id=?
+        """,
+        (int(req_id),),
+    )
+    r = cur.fetchone()
+    conn.close()
+    if not r:
+        return None
+
+    return {
+        "id": r[0],
+        "city": r[1],
+        "street": r[2],
+        "number": r[3],
+        "contact_name": r[4],
+        "contact_email": r[5],
+        "contact_phone": r[6],
+        "apartments_count": r[7],
+        "notes": r[8],
+        "status": r[9],
+        "created_at": r[10],
+    }
+
+def approve_building_request_db(req_id: int, approved_by: str | None = None):
+    """
+    Atomically approves a building_request:
+    - only if still pending
+    - get-or-create building by unique (city, street, number)
+    - ensures building_code exists
+    - updates request status to approved (and optionally stores linkage)
+    Returns: (building_id, building_code) or None if already handled / not found pending.
+    """
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    try:
+        cur.execute("BEGIN IMMEDIATE")  # locks for write, prevents double-approve races
+
+        # 1) Fetch pending request
+        cur.execute("""
+            SELECT id, city, street, number, status
+            FROM building_requests
+            WHERE id = ? AND status = 'pending'
+        """, (req_id,))
+        req = cur.fetchone()
+        if not req:
+            conn.rollback()
+            return None
+
+        city = (req["city"] or "").strip()
+        street = (req["street"] or "").strip()
+        number = (req["number"] or "").strip()
+
+        # 2) Get existing building by unique
+        cur.execute("""
+            SELECT id, building_code
+            FROM buildings
+            WHERE city = ? AND street = ? AND number = ?
+            LIMIT 1
+        """, (city, street, number))
+        b = cur.fetchone()
+
+        if b:
+            building_id = int(b["id"])
+            building_code = (b["building_code"] or "").strip()
+
+            # backfill code if missing
+            if not building_code:
+                building_code = generate_building_code(cur)  # <-- use the cur-aware generator
+                cur.execute("""
+                    UPDATE buildings
+                    SET building_code = ?
+                    WHERE id = ? AND (building_code IS NULL OR building_code = '')
+                """, (building_code, building_id))
+        else:
+            building_code = generate_building_code(cur)  # <-- cur-aware generator
+            cur.execute("""
+                INSERT INTO buildings (building_code, city, street, number)
+                VALUES (?, ?, ?, ?)
+            """, (building_code, city, street, number))
+            building_id = cur.lastrowid
+
+        # 3) Approve request (and store linkage if you have columns)
+        # If you DON'T have these columns, keep only status update.
+        # Recommended columns: approved_building_id, approved_building_code, approved_at, approved_by
+        cur.execute("""
+            UPDATE building_requests
+            SET status = 'approved'
+            WHERE id = ? AND status = 'pending'
+        """, (req_id,))
+
+        if cur.rowcount != 1:
+            # Someone else approved it between SELECT and UPDATE (should be rare with IMMEDIATE)
+            conn.rollback()
+            return None
+
+        conn.commit()
+        return building_id, building_code
+
+    except Exception:
+        conn.rollback()
+        raise
+
+def approve_building_request_atomic_db(req_id: int, approved_by: str | None = None):
+    """
+    Returns (building_id, building_code, admin_email, admin_invite_code)
+    or None if request not pending / not found.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("BEGIN IMMEDIATE")  # prevents double approve
+
+        # 1) request must be pending
+        cur.execute("""
+            SELECT *
+            FROM building_requests
+            WHERE id = ? AND status = 'pending'
+        """, (req_id,))
+        req = cur.fetchone()
+        if not req:
+            conn.rollback()
+            return None
+
+        city = (req["city"] or "").strip()
+        street = (req["street"] or "").strip()
+        number = (req["number"] or "").strip()
+
+        admin_email = (req["contact_email"] or "").strip().lower()
+        if not admin_email:
+            raise ValueError("contact_email missing on building_requests")
+
+        # 2) get or create building by unique address
+        cur.execute("""
+            SELECT id, building_code, admin_email, admin_invite_code
+            FROM buildings
+            WHERE city = ? AND street = ? AND number = ?
+            LIMIT 1
+        """, (city, street, number))
+        b = cur.fetchone()
+
+        if b:
+            building_id = int(b["id"])
+            building_code = (b["building_code"] or "").strip()
+            if not building_code:
+                building_code = generate_building_code(cur)
+                cur.execute("""
+                    UPDATE buildings
+                    SET building_code = ?
+                    WHERE id = ? AND (building_code IS NULL OR building_code = '')
+                """, (building_code, building_id))
+
+            # always set admin_email from request (or keep existing? your choice)
+            invite_code = (b["admin_invite_code"] or "").strip()
+            if not invite_code:
+                invite_code = generate_invite_code_6()
+
+            cur.execute("""
+                UPDATE buildings
+                SET admin_email = ?,
+                    admin_invite_code = ?,
+                    admin_email_verified = COALESCE(admin_email_verified, 0)
+                WHERE id = ?
+            """, (admin_email, invite_code, building_id))
+
+        else:
+            building_code = generate_building_code(cur)
+            invite_code = generate_invite_code_6()
+            cur.execute("""
+                INSERT INTO buildings (building_code, city, street, number, admin_email, admin_invite_code, admin_email_verified)
+                VALUES (?, ?, ?, ?, ?, ?, 0)
+            """, (building_code, city, street, number, admin_email, invite_code))
+            building_id = int(cur.lastrowid)
+
+        # 3) approve request + linkage
+        cols = table_columns(cur, "building_requests")
+        sets = ["status = 'approved'"]
+        params = []
+
+        if "approved_at" in cols:
+            sets.append("approved_at = ?")
+            params.append(datetime.utcnow().isoformat(timespec="seconds"))
+        if "approved_by" in cols:
+            sets.append("approved_by = ?")
+            params.append(approved_by)
+        if "approved_building_code" in cols:
+            sets.append("approved_building_code = ?")
+            params.append(building_code)
+        if "approved_building_id" in cols:
+            sets.append("approved_building_id = ?")
+            params.append(building_id)
+
+        params.append(req_id)
+
+        cur.execute(
+            f"UPDATE building_requests SET {', '.join(sets)} WHERE id = ? AND status='pending'",
+            tuple(params)
+        )
+        if cur.rowcount != 1:
+            conn.rollback()
+            return None
+
+        conn.commit()
+        return (building_id, building_code, admin_email, invite_code)
+
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+def verify_admin_invite_db(email: str, invite_code: str):
+    """
+    Returns building row if match, else None.
+    """
+    email = (email or "").strip().lower()
+    invite_code = (invite_code or "").strip()
+
+    if not email or not invite_code:
+        return None
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, building_code, admin_email, admin_invite_code
+        FROM buildings
+        WHERE LOWER(admin_email) = ? AND admin_invite_code = ?
+        LIMIT 1
+    """, (email, invite_code))
+    row = cur.fetchone()
+    conn.close()
+    return row
+
+def upgrade_user_to_building_admin_db(user_id: int, building_id: int, email: str | None = None):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # set role + building
+    cur.execute("""
+        UPDATE users
+        SET role = 'building_admin',
+            building_id = ?,
+            email = COALESCE(email, ?)
+        WHERE id = ?
+    """, (building_id, (email or "").strip().lower(), user_id))
+
+    conn.commit()
+    conn.close()

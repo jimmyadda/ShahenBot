@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <title>ShahenBot – פתיחת בניין</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <style>
+    body{
+      background: linear-gradient(135deg, #f3f6ff 0%, #fdfdfd 40%, #f5f5f5 100%);
+      min-height:100vh;
+    }
+    .card{
+      border: none;
+      border-radius: 1rem;
+      box-shadow: 0 10px 30px rgba(15,23,42,.08);
+    }
+    .brand{
+      font-weight: 800;
+      letter-spacing: .3px;
+    }
+    .muted{color:#6c757d;}
+  </style>
+</head>
+
+<body class="py-4">
+  <div class="container" style="max-width: 860px;">
+
+    <div class="text-center mb-4">
+      <div class="brand fs-3">🏢 ShahenBot</div>
+      <div class="muted">בקשה לפתיחת בניין חדש במערכת</div>
+    </div>
+
+    <div class="card">
+      <div class="card-body p-4 p-md-5">
+
+        <h4 class="mb-1">פתיחת בניין</h4>
+        <div class="muted mb-4">
+          מלאו פרטים קצרים — נחזור אליכם עם קוד בניין והגדרת מנהל ועד.
+        </div>
+
+        <form method="post" action="/onboard" class="row g-3">
+
+          <!-- Building info -->
+          <div class="col-12">
+            <div class="fw-semibold mb-2">פרטי הבניין</div>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">עיר</label>
+            <input name="city" class="form-control" placeholder="לדוגמה: חיפה">
+          </div>
+
+          <div class="col-md-5">
+            <label class="form-label">רחוב *</label>
+            <input name="street" class="form-control" placeholder="לדוגמה: העצמאות" required>
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">מספר *</label>
+            <input name="number" class="form-control" placeholder="לדוגמה: 12" required>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">מספר דירות (בערך)</label>
+            <input name="apartments_count" type="number" min="1" max="999" class="form-control" placeholder="לדוגמה: 24">
+          </div>
+
+          <!-- Contact info -->
+          <div class="col-12 mt-3">
+            <div class="fw-semibold mb-2">איש קשר (מנהל ועד / נציג)</div>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">שם</label>
+            <input name="contact_name" class="form-control" placeholder="לדוגמה: דני כהן">
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">אימייל *</label>
+            <input name="contact_email" type="email" class="form-control" placeholder="name@email.com" required>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">טלפון</label>
+            <input name="contact_phone" class="form-control" placeholder="לדוגמה: 050-1234567">
+          </div>
+
+          <!-- Notes -->
+          <div class="col-12">
+            <label class="form-label">הערות (אופציונלי)</label>
+            <textarea name="notes" class="form-control" rows="4"
+                      placeholder="לדוגמה: יש מעלית / חנייה / קבוצת וואטסאפ פעילה / בקשה מיוחדת..."></textarea>
+          </div>
+
+          <div class="col-12 d-flex align-items-center justify-content-between mt-2">
+            <div class="small muted">
+              בלחיצה על שליחה אתם מאשרים שניתן ליצור את הבקשה במערכת לצורך תיאום הקמה.
+            </div>
+          </div>
+
+          <div class="col-12 d-grid d-md-flex gap-2 mt-3">
+            <button class="btn btn-primary px-4" type="submit">✅ שלח בקשה</button>
+            <a class="btn btn-outline-secondary px-4" href="/" onclick="return false;">ביטול</a>
+          </div>
+
+        </form>
+
+      </div>
+    </div>
+
+    <div class="text-center small muted mt-3">
+      © ShahenBot
+    </div>
+
+  </div>
+</body>
+</html>

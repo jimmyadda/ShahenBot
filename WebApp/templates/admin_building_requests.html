@@ -1,0 +1,102 @@
+{% extends "admin_base.html" %}
+{% block title %}Building Requests{% endblock %}
+{% block page_title %}🏢 בקשות פתיחת בניין{% endblock %}
+
+{% block content %}
+
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between mb-3">
+  <div class="text-muted">
+    ניהול בקשות לפתיחת בניין (Onboarding) · {{ requests|length }} בקשה(ות)
+  </div>
+
+  <div class="mt-2 mt-md-0 d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_buildings') }}">Buildings</a>
+  </div>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, msg in messages %}
+      <div class="alert alert-{{category}}">{{ msg }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<div class="card">
+  <div class="card-header">בקשות</div>
+  <div class="card-body p-0">
+
+    {% if not requests %}
+      <div class="p-4 text-muted">אין בקשות כרגע ✅</div>
+    {% else %}
+      <div class="table-responsive">
+        <table class="table table-striped align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>#</th>
+              <th>בניין</th>
+              <th>עיר</th>
+              <th>דירות</th>
+              <th>איש קשר</th>
+              <th>אימייל</th>
+              <th>טלפון</th>
+              <th>סטטוס</th>
+              <th>נוצר</th>
+              <th class="text-center">פעולות</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for r in requests %}
+            <tr>
+              <td class="fw-semibold">{{ r.id }}</td>
+              <td>
+                <div class="fw-semibold">{{ r.street }} {{ r.number }}</div>
+                {% if r.notes %}
+                  <div class="text-muted small">{{ r.notes }}</div>
+                {% endif %}
+              </td>
+              <td>{{ r.city or "—" }}</td>
+              <td>{{ r.apartments_count or "—" }}</td>
+              <td>{{ r.contact_name or "—" }}</td>
+              <td style="direction:ltr; font-family:monospace;">{{ r.contact_email or "—" }}</td>
+              <td style="direction:ltr; font-family:monospace;">{{ r.contact_phone or "—" }}</td>
+              <td>
+                {% if r.status == 'pending' %}
+                  <span class="badge text-bg-warning">pending</span>
+                {% elif r.status == 'approved' %}
+                  <span class="badge text-bg-success">approved</span>
+                {% else %}
+                  <span class="badge text-bg-secondary">rejected</span>
+                {% endif %}
+              </td>
+              <td style="direction:ltr; font-family:monospace; font-size:.85rem;">
+                {{ r.created_at }}
+              </td>
+              <td class="text-center">
+                <div class="d-flex gap-2 justify-content-center flex-wrap">
+
+                  {% if r.status == 'pending' %}
+                    <form method="post" action="{{ url_for('approve_building_request', req_id=r.id) }}">
+                      <button class="btn btn-success btn-sm">✅ Approve</button>
+                    </form>
+
+                    <form method="post" action="{{ url_for('reject_building_request', req_id=r.id) }}">
+                      <button class="btn btn-outline-danger btn-sm">❌ Reject</button>
+                    </form>
+                  {% else %}
+                    <span class="text-muted small">אין פעולות</span>
+                  {% endif %}
+
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+
+  </div>
+</div>
+
+{% endblock %}

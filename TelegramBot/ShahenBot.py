@@ -56,7 +56,12 @@ def get_text(lang: str, key: str) -> str:
 
 def build_main_menu_keyboard(chat_id: int, lang: str):
     tenant = api_get_tenant_by_chat_id(chat_id)
-    has_tenant = tenant is not None
+
+    is_registered = bool(
+        tenant
+        and int(tenant.get("building_id") or 0) > 0
+        and (tenant.get("apartment") or "").strip()
+    )
 
     lang_row = [
         InlineKeyboardButton(get_text(lang, "lang_button_he"), callback_data="lang_he"),
@@ -67,14 +72,13 @@ def build_main_menu_keyboard(chat_id: int, lang: str):
     actions_row = [
         InlineKeyboardButton(get_text(lang, "btn_report"), callback_data="report"),
         InlineKeyboardButton(get_text(lang, "btn_open_building"), callback_data="open_building_request"),
-        InlineKeyboardButton(get_text(lang, "btn_verify_admin"), callback_data="verify_admin")
+        InlineKeyboardButton(get_text(lang, "btn_verify_admin"), callback_data="verify_admin"),
     ]
 
     rows = [lang_row, actions_row]
-   
-   
-    # פורטל דיירים
-    if tenant and int(tenant.get("building_id") or 0) > 0:
+
+    # פורטל דיירים - רק אם רשום באמת
+    if is_registered:
         name_ok = (tenant.get("name") or "").strip() and not (tenant.get("name") or "").startswith("New Tenant")
         apt_ok = (tenant.get("apartment") or "").strip()
         if name_ok and apt_ok:
@@ -82,14 +86,13 @@ def build_main_menu_keyboard(chat_id: int, lang: str):
                 InlineKeyboardButton(get_text(lang, "portal_open_btn"), callback_data="portal_open")
             ])
 
-    # Register button 
-    if not has_tenant:
+    # כפתור רישום דייר - אם לא רשום באמת
+    if not is_registered:
         rows.append([
             InlineKeyboardButton(get_text(lang, "btn_register"), callback_data="register")
         ])
 
     return InlineKeyboardMarkup(rows)
-
 # ───────────── API helpers ─────────────
 
 def api_get_user_language(chat_id: int, default_lang: str = "he") -> str:

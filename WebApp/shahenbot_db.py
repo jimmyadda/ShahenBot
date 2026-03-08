@@ -1272,7 +1272,7 @@ def compute_missing_tenant_fields(tenant: dict) -> list[str]:
         missing.append("parking_slots")
     return missing
 
-# PAyments Helpers
+# Payments Helpers
 
 def get_pending_payments_db(building_id: int | None = None):
     conn = get_connection()
@@ -2028,6 +2028,7 @@ def list_building_announcements_db(building_id: int, limit: int = 5):
 
 
 #------------------OnBoarding------------------#
+
 def save_building_request_db(
     city: str | None,
     street: str | None,
@@ -2522,3 +2523,32 @@ def upgrade_user_to_building_admin_db(user_id: int, building_id: int, email: str
 
     conn.commit()
     conn.close()
+
+def get_user_by_id_db(user_id: int):
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+        row = cur.fetchone()
+        conn.close()
+        return dict(row) if row else None
+    
+def get_user_by_email_db(email: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1", (email,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None   
+
+def create_user_db(email: str, role: str = "tenant", building_id: int | None = None):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO users (email, role, building_id)
+        VALUES (?, ?, ?)
+    """, (email.strip().lower(), role, building_id))
+    conn.commit()
+    user_id = cur.lastrowid
+    conn.close()
+    return user_id 
+

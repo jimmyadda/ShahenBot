@@ -17,22 +17,30 @@
         {% endif %}
 
         <form method="post" action="{{ url_for('login_post') }}">
-          <div class="mb-3">
-            <label class="form-label">Username</label>
-            <input class="form-control" name="username" autocomplete="username" required>
-          </div>
+  <div class="mb-3">
+    <label class="form-label">Username</label>
+    <input class="form-control" name="username" autocomplete="username">
+  </div>
 
-          <div class="mb-3">
-            <label class="form-label">Password</label>
-            <input class="form-control" type="password" name="password" autocomplete="current-password" required>
-          </div>
+  <div class="mb-3">
+    <label class="form-label">Password</label>
+    <input class="form-control" type="password" name="password" autocomplete="current-password">
+  </div>
 
-          <!--Verification code-->
-          <div class="mb-3">
-            <label class="form-label">invite code</label>
-            <input class="form-control" type="text" name="invite_code" placeholder="קוד ועד (אופציונלי)" />
-          </div>
-        </form>
+  <hr>
+
+  <div class="mb-3">
+    <label class="form-label">Email (for building admin verification)</label>
+    <input class="form-control" type="email" name="email" autocomplete="email">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Invite Code</label>
+    <input class="form-control" type="text" name="invite_code" placeholder="Optional">
+  </div>
+
+  <button class="btn btn-primary w-100" type="submit">Login</button>
+</form>
       </div>
     </div>
   </div>

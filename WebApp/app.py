@@ -31,6 +31,7 @@ from shahenbot_db import (
     create_pending_payment_db,
     create_poll_db,
     create_tenant_portal_token_db,
+    create_user_db,
     delete_building_request_db,
     get_building_by_unique_db,
     get_building_request_db,
@@ -46,6 +47,8 @@ from shahenbot_db import (
     get_tenants_by_building_apartment_db,
     get_tenants_due_this_month_db,
     get_tenants_summary_db,
+    get_user_by_email_db,
+    get_user_by_id_db,
     init_db,
     get_user_language_db,
     is_fully_registered,
@@ -160,8 +163,21 @@ def send_telegram_message(chat_id: int, text: str, buttons: list | None = None):
 
 # User Helper
 def current_user():
-    uid = session.get("staff_user_id")
-    return get_staff_user_by_id_db(uid) if uid else None
+    # 1) staff user (super_admin / system admin)
+    staff_user_id = session.get("staff_user_id")
+    if staff_user_id:
+        u = get_staff_user_by_id_db(staff_user_id)
+        if u:
+            return dict(u)
+
+    # 2) normal user (tenant / building admin)
+    user_id = session.get("user_id")
+    if user_id:
+        u = get_user_by_id_db(user_id)
+        if u:
+            return dict(u)
+
+    return None
 
 def require_login():
     u = current_user()
@@ -206,8 +222,14 @@ def admin_required(view):
     return wrapped
 
 def scoped_building_id(u: dict) -> int | None:
-    # super admin sees all buildings (None = no filter)
-    return None if u["role"] == "super_admin" else u["building_id"]
+    role = (u.get("role") or "").strip().lower()
+
+    # super admin sees everything
+    if role == "super_admin":
+        return None
+
+    # building admin / tenant → only their building
+    return int(u.get("building_id") or 0) or None
 
 @app.get("/login")
 def login():
@@ -217,31 +239,68 @@ def login():
 
 @app.post("/login")
 def login_post():
-    username = request.form.get("username", "")
-    password = request.form.get("password", "")
-    email = request.form.get("email", "")
-    invite_code = (request.form.get("invite_code") or "").strip()  # New
+    username = (request.form.get("username") or "").strip()
+    password = (request.form.get("password") or "").strip()
+    email = (request.form.get("email") or "").strip().lower()
+    invite_code = (request.form.get("invite_code") or "").strip()
 
-    user = get_staff_user_by_username_db(username)
-    if not user or not verify_staff_password(user, password):
-        return render_template("login.html", error="Invalid username or password")
-        # 2) אם הוזן invite_code – נבדוק התאמה ונשדרג לוועד
-    if invite_code:
+    # -------------------------------------------------
+    # FLOW 1: Building Admin login via email + invite code
+    # -------------------------------------------------
+    if email and invite_code:
         b = verify_admin_invite_db(email, invite_code)
         if not b:
-            flash("Invite code is invalid for this email.", "warning")
-            # אפשר לבחור: להמשיך כ-user רגיל או לחסום login
-            # אני ממליץ: להמשיך login רגיל אבל בלי שדרוג:
+            return render_template("login.html", error="Invite code is invalid for this email.")
+
+        # כאן אתה צריך משתמש ווב אמיתי.
+        # אם כבר יש לך users table + פונקציה get/create לפי email – עדיף להשתמש בה.
+        user = get_user_by_email_db(email)
+
+        if not user:
+            # יוצרים user חדש עבור building admin
+            user_id = create_user_db(
+                email=email,
+                role="building_admin",
+                building_id=int(b["id"])
+            )
+            user = get_user_by_id_db(user_id)
         else:
+            # מעדכנים role + building
             upgrade_user_to_building_admin_db(
                 user_id=int(user["id"]),
                 building_id=int(b["id"]),
                 email=email
             )
-            flash("You are now verified as building admin ✅", "success")
+            user = get_user_by_id_db(int(user["id"]))
 
-            
+        # session של user רגיל / building admin
+        session.clear()
+        session["user_id"] = user["id"]
+
+        flash("You are now verified as building admin ✅", "success")
+        return redirect(url_for("building_admin_dashboard"))
+
+    # -------------------------------------------------
+    # FLOW 2: Staff / Super Admin login via username + password
+    # -------------------------------------------------
+    if not username or not password:
+        return render_template("login.html", error="Please enter username/password or email/invite code.")
+
+    user = get_staff_user_by_username_db(username)
+    if not user or not verify_staff_password(user, password):
+        return render_template("login.html", error="Invalid username or password")
+
+    session.clear()
     session["staff_user_id"] = user["id"]
+
+    role = (user.get("role") or "").strip().lower()
+
+    if role == "super_admin":
+        return redirect(url_for("admin_dashboard"))
+
+    if role == "building_admin":
+        return redirect(url_for("building_admin_dashboard"))
+
     return redirect(url_for("admin_dashboard"))
 
 @app.get("/logout")
@@ -252,7 +311,7 @@ def logout():
 
 @app.route("/")
 def home():
-    return redirect(url_for("admin_dashboard"))
+    return redirect(url_for("login"))
 
 # ───────────────────────────────────────────────
 #   API: GET USER LANGUAGE
@@ -425,13 +484,17 @@ def api_upload_image():
     return jsonify({"url": url})
 
 # ───────────────────────────────────────────────
-#   ADMIN DASHBOARD (HTML) – TICKETS
+#   Building ADMIN DASHBOARD (HTML) – TICKETS
 # ───────────────────────────────────────────────
-@app.get("/admin")
-def admin_dashboard():
+@app.get("/building-admin")
+def building_admin_dashboard():
     u = require_login()
     if not isinstance(u, dict):
         return u
+
+    role = (u.get("role") or "").strip().lower()
+    if role not in ("building_admin", "super_admin"):
+        return redirect(url_for("login"))
 
     status = request.args.get("status") or ""
     category = request.args.get("category") or ""
@@ -441,7 +504,8 @@ def admin_dashboard():
     building_filter = scoped_building_id(u)
     tenants = get_tenants_summary_db(building_filter)
     due_tenants = get_tenants_due_this_month_db(building_filter)
-    buildings = list_buildings_db()
+    buildings = list_buildings_db() if role == "super_admin" else []
+
     tenants_missing = []
     for t in tenants:
         miss = compute_missing_tenant_fields(t)
@@ -453,11 +517,11 @@ def admin_dashboard():
         status=status if status else None,
         category=category if category else None,
         search=search if search else None,
-        building_id=building_filter,   # <-- add this param in DB func (Step 2 may adjust)
+        building_id=building_filter,
     )
 
     return render_template(
-        "admin.html",
+        "building_admin_dashboard.html",
         tickets=tickets,
         status=status,
         category=category,
@@ -470,6 +534,20 @@ def admin_dashboard():
         current_user=u,
     )
 
+@app.get("/admin")
+def admin_dashboard():
+    u = require_login()
+    if not isinstance(u, dict):
+        return u
+
+    role = (u.get("role") or "").strip().lower()
+    if role != "super_admin":
+        return redirect(url_for("building_admin_dashboard"))
+
+    return render_template(
+        "admin_dashboard.html",
+        current_user=u,
+    )
 # ───────────────────────────────────────────────
 #   ADMIN: UPDATE TICKET STATUS + Telegram notify
 # ───────────────────────────────────────────────
@@ -520,7 +598,7 @@ def admin_update_status(ticket_id):
 
             send_telegram_message(cid, text, buttons=buttons)
 
-    return redirect(url_for("admin_dashboard"))
+    return redirect(url_for("building_admin_dashboard"))
 
 # ───────────────────────────────────────────────
 #   ADMIN: TENANTS LIST + EDIT
@@ -762,7 +840,12 @@ def admin_backfill_building_get():
     if not building_id:
         return "Missing building_id. Example: /admin/migrate/backfill_building?building_id=1", 400
 
-    backfill_building_ids_db(building_id)
+    try:
+        backfill_building_ids_db(building_id)
+        flash(f"Backfill completed for building #{building_id}", "success")
+    except Exception as e:
+        flash(f"Backfill failed for building #{building_id}: {e}", "danger")
+
     return redirect(url_for("admin_dashboard"))
 
 @app.route("/api/buildings/resolve", methods=["POST"])
@@ -1274,25 +1357,26 @@ def onboard_submit():
     return render_template("onboard_success.html")
 
 @app.get("/admin/building_requests")
-@admin_required
 def admin_building_requests():
-    user = get_current_staff_user()  
-    if not user or user.get("role") != "super_admin":
-        return redirect(url_for("admin_dashboard"))
+    u = require_login()
+    if not isinstance(u, dict):
+        return u
 
-    requests = list_building_requests_db()
+    if (u.get("role") or "").strip().lower() != "super_admin":
+        return redirect(url_for("building_admin_dashboard"))
 
+    requests_list = list_building_requests_db()
     return render_template(
         "admin_building_requests.html",
-        requests=requests,
-        current_user=user
+        requests=requests_list,
+        current_user=u,
     )
 
 @app.post("/admin/building_requests/<int:req_id>/approve")
 @admin_required
 def approve_building_request(req_id: int):
-    user = get_current_staff_user()
-    if not user or user.get("role") != "super_admin":
+    user = current_user()
+    if not user or (user.get("role") or "").strip().lower() != "super_admin":
         return redirect(url_for("admin_dashboard"))
 
     try:
@@ -1300,41 +1384,44 @@ def approve_building_request(req_id: int):
             req_id=req_id,
             approved_by=str(user.get("id") or "super_admin")
         )
+
         if not res:
             flash("Request already handled or not found.", "warning")
             return redirect(url_for("admin_building_requests"))
 
         building_id, building_code, admin_email, invite_code = res
-        from Mailer import send_email
-        subject = "Shahen – Building Approved"
-        body = f"""
-        Hello,
 
-        Your building request has been approved.
+        try:
+            from Mailer import send_email
 
-        Building Code:
-        {building_code}
+            subject = "Shahen – Building Approved"
+            body = f"""Hello,
 
-        Admin Verification Code:
-        {invite_code}
+Your building request has been approved.
 
-        Open ShahenBot and choose:
-        "I Have an Admin Code"
+Building Code:
+{building_code}
 
-        Email: {admin_email}
-        Code: {invite_code}
-        """
+Admin Verification Code:
+{invite_code}
 
-        send_email(admin_email, subject, body)
+Open ShahenBot and choose:
+"I Have an Admin Code"
 
+Email: {admin_email}
+Code: {invite_code}
+"""
+            send_email(admin_email, subject, body)
+            flash(
+                f"Building approved. Email sent to: {admin_email}. Invite code: {invite_code}",
+                "success"
+            )
+        except Exception as mail_ex:
+            flash(
+                f"Building approved, but email sending failed: {mail_ex}. Invite code: {invite_code}",
+                "warning"
+            )
 
-        # ❌ לא למחוק את הבקשה – פשוט status=approved (מומלץ)
-        # אם אתה מתעקש למחוק, תעשה כאן בלבד, אחרי commit.
-
-        flash(
-            f"Building approved. Admin email: {admin_email} Invite code: {invite_code}",
-            "success"
-        )
         return redirect(url_for("admin_building_requests"))
 
     except Exception as e:
@@ -1346,7 +1433,9 @@ def approve_building_request(req_id: int):
 @app.post("/admin/building_requests/<int:req_id>/reject")
 @admin_required
 def reject_building_request(req_id: int):
-    if current_user.role != "super_admin":
+
+    user = current_user()
+    if not user or (user.get("role") or "").strip().lower() != "super_admin":
         return redirect(url_for("admin_dashboard"))
 
     req = get_building_request_db(req_id)

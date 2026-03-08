@@ -21,5 +21,39 @@
       </div>
     </div>
   </div>
+
+  {% if current_user and (current_user.role == "super_admin") %}
+<div class="card shadow-sm mt-4 border-warning">
+  <div class="card-body">
+    <h5 class="card-title text-warning">Dev Tools – Reset Telegram User</h5>
+    <p class="text-muted small mb-3">
+      Use this to reset a Telegram user during development so you can test registration again.
+    </p>
+
+    <form method="post" action="{{ url_for('admin_reset_user') }}" class="row g-2">
+      <div class="col-md-6">
+        <input
+          type="text"
+          name="chat_id"
+          class="form-control"
+          placeholder="Telegram chat_id (e.g. 123456789)"
+          required
+        >
+      </div>
+
+      <div class="col-md-3">
+        <button type="submit" class="btn btn-warning w-100">
+          Reset User
+        </button>
+      </div>
+    </form>
+
+    <div class="form-text mt-2">
+      This will detach the Telegram chat from the tenant/user so the bot treats it as a new user on <code>/start</code>.
+    </div>
+  </div>
+</div>
+{% endif %}
+
 </body>
 </html>

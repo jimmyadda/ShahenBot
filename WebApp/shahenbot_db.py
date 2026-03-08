@@ -2552,3 +2552,24 @@ def create_user_db(email: str, role: str = "tenant", building_id: int | None = N
     conn.close()
     return user_id 
 
+def reset_user_by_chat_id_db(chat_id: str):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE tenants
+        SET chat_id = NULL
+        WHERE chat_id = ?
+    """, (chat_id,))
+
+    try:
+        cur.execute("""
+            UPDATE users
+            SET telegram_chat_id = NULL
+            WHERE telegram_chat_id = ?
+        """, (chat_id,))
+    except Exception:
+        pass
+
+    conn.commit()
+    conn.close()

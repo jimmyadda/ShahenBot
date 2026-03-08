@@ -877,7 +877,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         building_id = int(building["id"])
-        logger.info(building_id,apartment)
+        logger.info(f"building_id={building_id} apartment={apartment}")        
         
         tenants = api_get_tenants_by_building_apartment(building_id, apartment, only_without_chat=True)
 

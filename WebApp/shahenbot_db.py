@@ -1086,9 +1086,8 @@ def get_tenants_by_building_apartment_db(
             "apartment": r[2],
             "tenant_type": r[3],
             "email": r[4],
-            "email": r[5],
-            "building_id": r[6],
-            "chat_id": r[7]
+            "building_id": r[5],
+            "chat_id": r[6]
         })
 
     return tenants

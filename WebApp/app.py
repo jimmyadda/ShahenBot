@@ -66,6 +66,7 @@ from shahenbot_db import (
     mark_tenant_portal_token_used_db,
     poll_results_db,
     reject_payment_db,
+    reset_user_by_chat_id_db,
     resolve_building_by_street_number_db,
     save_building_request_db,
     set_next_payment_date_from_months_db,
@@ -707,7 +708,8 @@ def api_link_tenant_chat(tenant_id: int):
 
     return jsonify(tenant), 200
 
-# super admin   
+# super admin 
+  
 @app.get("/admin/buildings")
 def admin_buildings():
     u = require_super_admin()
@@ -1468,6 +1470,25 @@ def api_tenant_portal_create_link():
     return jsonify({"ok": True, "url": url, "expires_at": rec["expires_at"]})
 
 
+# DEV
+@app.post("/admin/dev/reset_user")
+def admin_reset_user():
+    u = require_super_admin()
+    if not isinstance(u, dict):
+        return u
+
+    chat_id = (request.form.get("chat_id") or "").strip()
+    if not chat_id:
+        flash("chat_id is required", "warning")
+        return redirect(url_for("admin_dashboard"))
+
+    try:
+        reset_user_by_chat_id_db(chat_id)
+        flash(f"User reset completed for chat_id={chat_id}", "success")
+    except Exception as e:
+        flash(f"User reset failed: {e}", "danger")
+
+    return redirect(url_for("admin_dashboard"))
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5001"))

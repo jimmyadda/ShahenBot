@@ -13,7 +13,10 @@ DB_PATH = Path(__file__).with_name("shahenbot.db")
 
 def get_connection():
     """Return a new SQLite connection."""
-    return sqlite3.connect(DB_PATH)
+    #return sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn 
 
 def init_db():
     """Create tables if they don't exist."""

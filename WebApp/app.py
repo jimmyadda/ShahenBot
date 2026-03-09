@@ -28,6 +28,7 @@ from shahenbot_db import (
     cast_vote_db,
     compute_missing_tenant_fields,
     create_announcement_db,
+    create_building_request_db,
     create_pending_payment_db,
     create_poll_db,
     create_tenant_portal_token_db,
@@ -549,6 +550,31 @@ def admin_dashboard():
         "admin_dashboard.html",
         current_user=u,
     )
+
+@app.post("/api/building_requests")
+def api_create_building_request():
+    data = request.get_json(silent=True) or {}
+
+    city = (data.get("city") or "").strip()
+    street = (data.get("street") or "").strip()
+    number = (data.get("number") or "").strip()
+    contact_name = (data.get("contact_name") or "").strip()
+    contact_phone = (data.get("contact_phone") or "").strip()
+    contact_email = (data.get("contact_email") or "").strip().lower()
+
+    if not city or not street or not number or not contact_name or not contact_phone or not contact_email:
+        return jsonify({"error": "missing_fields"}), 400
+
+    req_id = create_building_request_db(
+        city=city,
+        street=street,
+        number=number,
+        contact_name=contact_name,
+        contact_phone=contact_phone,
+        contact_email=contact_email,
+    )
+
+    return jsonify({"ok": True, "request_id": req_id}), 200
 # ───────────────────────────────────────────────
 #   ADMIN: UPDATE TICKET STATUS + Telegram notify
 # ───────────────────────────────────────────────

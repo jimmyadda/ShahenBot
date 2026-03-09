@@ -2510,6 +2510,27 @@ def verify_admin_invite_db(email: str, invite_code: str):
     conn.close()
     return row
 
+def link_telegram_admin_to_building_db(chat_id: str, email: str, building_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # אם כבר קיים tenant עם chat_id → עדכן אותו
+    cur.execute("""
+        UPDATE tenants
+        SET building_id = ?, tenant_type = 'admin', email = ?
+        WHERE chat_id = ?
+    """, (building_id, email, chat_id))
+
+    if cur.rowcount == 0:
+        # אחרת צור tenant חדש
+        cur.execute("""
+            INSERT INTO tenants (name, apartment, building_id, tenant_type, email, chat_id)
+            VALUES ('Building Admin', '', ?, 'admin', ?, ?)
+        """, (building_id, email, chat_id))
+
+    conn.commit()
+    conn.close()
+    
 def upgrade_user_to_building_admin_db(user_id: int, building_id: int, email: str | None = None):
     conn = get_connection()
     cur = conn.cursor()

@@ -55,6 +55,7 @@ from shahenbot_db import (
     is_fully_registered,
     is_tenant_fully_registered,
     is_token_expired,
+    link_telegram_admin_to_building_db,
     list_announcements_db,
     list_building_announcements_db,
     list_building_requests_db,
@@ -892,6 +893,34 @@ def api_resolve_building_route():
         return jsonify({"error": "not_found"}), 404
 
     return jsonify(building), 200
+
+@app.post("/api/buildings/verify_invite")
+def api_verify_invite():
+    data = request.get_json(silent=True) or {}
+
+    email = (data.get("email") or "").strip().lower()
+    invite_code = (data.get("invite_code") or "").strip()
+    chat_id = str(data.get("chat_id") or "").strip()
+
+    if not email or not invite_code or not chat_id:
+        return jsonify({"error": "missing_fields"}), 400
+
+    building = verify_admin_invite_db(email, invite_code)
+    if not building:
+        return jsonify({"error": "invalid"}), 400
+
+    building_id = int(building["id"])
+
+    link_telegram_admin_to_building_db(
+        chat_id=chat_id,
+        email=email,
+        building_id=building_id,
+    )
+
+    return jsonify({
+        "ok": True,
+        "building_id": building_id
+    }), 200
 
 @app.route("/api/tenants/by_building_apartment", methods=["GET"])
 def api_tenants_by_building_apartment():

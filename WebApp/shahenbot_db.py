@@ -1017,7 +1017,7 @@ def delete_building_for_testing_db(building_id: int):
 
     conn.commit()
     conn.close()
-    
+
 def ensure_column(cur, table: str, col: str, col_def: str):
     cur.execute(f"PRAGMA table_info({table})")
     cols = {r[1] for r in cur.fetchall()}
@@ -1150,16 +1150,16 @@ def upgrade_telegram_user_to_building_admin(telegram_user_id: str, email: str, i
     cur = conn.cursor()
 
     # find user by telegram_user_id; create if missing
-    cur.execute("SELECT id FROM users WHERE telegram_user_id = ? LIMIT 1", (str(telegram_user_id),))
+    cur.execute("SELECT id FROM staff_users WHERE telegram_user_id = ? LIMIT 1", (str(telegram_user_id),))
     u = cur.fetchone()
     if not u:
         cur.execute("""
-            INSERT INTO users (email, role, building_id, telegram_user_id)
+            INSERT INTO staff_users (email, role, building_id, telegram_user_id)
             VALUES (?, 'building_admin', ?, ?)
         """, (email.strip().lower(), building_id, str(telegram_user_id)))
     else:
         cur.execute("""
-            UPDATE users
+            UPDATE staff_users
             SET email = COALESCE(email, ?),
                 role = 'building_admin',
                 building_id = ?
@@ -2556,7 +2556,7 @@ def upgrade_user_to_building_admin_db(user_id: int, building_id: int, email: str
 
     # set role + building
     cur.execute("""
-        UPDATE users
+        UPDATE staff_users
         SET role = 'building_admin',
             building_id = ?,
             email = COALESCE(email, ?)
@@ -2569,7 +2569,7 @@ def upgrade_user_to_building_admin_db(user_id: int, building_id: int, email: str
 def get_user_by_id_db(user_id: int):
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+        cur.execute("SELECT * FROM staff_users WHERE id = ?", (user_id,))
         row = cur.fetchone()
         conn.close()
         return dict(row) if row else None
@@ -2577,7 +2577,7 @@ def get_user_by_id_db(user_id: int):
 def get_user_by_email_db(email: str):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1", (email,))
+    cur.execute("SELECT * FROM staff_users WHERE LOWER(email) = LOWER(?) LIMIT 1", (email,))
     row = cur.fetchone()
     conn.close()
     return dict(row) if row else None   
@@ -2586,7 +2586,7 @@ def create_user_db(email: str, role: str = "tenant", building_id: int | None = N
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO users (email, role, building_id)
+        INSERT INTO staff_users (email, role, building_id)
         VALUES (?, ?, ?)
     """, (email.strip().lower(), role, building_id))
     conn.commit()
@@ -2606,7 +2606,7 @@ def reset_user_by_chat_id_db(chat_id: str):
 
     try:
         cur.execute("""
-            UPDATE users
+            UPDATE staff_users
             SET telegram_chat_id = NULL
             WHERE telegram_chat_id = ?
         """, (chat_id,))

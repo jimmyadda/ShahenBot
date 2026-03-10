@@ -998,7 +998,26 @@ def deactivate_building_db(building_id: int) -> bool:
     ok = cur.rowcount > 0
     conn.close()
     return ok
+# admin only - testing# 
+def delete_building_for_testing_db(building_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
 
+    # מחיקת דיירים
+    cur.execute("DELETE FROM tenants WHERE building_id = ?", (building_id,))
+
+    # מחיקת קריאות
+    cur.execute("DELETE FROM tickets WHERE building_id = ?", (building_id,))
+
+    # מחיקת בקשות בניין
+    cur.execute("DELETE FROM building_requests WHERE approved_building_id = ?", (building_id,))
+
+    # מחיקת הבניין עצמו
+    cur.execute("DELETE FROM buildings WHERE id = ?", (building_id,))
+
+    conn.commit()
+    conn.close()
+    
 def ensure_column(cur, table: str, col: str, col_def: str):
     cur.execute(f"PRAGMA table_info({table})")
     cols = {r[1] for r in cur.fetchall()}
@@ -2530,7 +2549,7 @@ def link_telegram_admin_to_building_db(chat_id: str, email: str, building_id: in
 
     conn.commit()
     conn.close()
-    
+
 def upgrade_user_to_building_admin_db(user_id: int, building_id: int, email: str | None = None):
     conn = get_connection()
     cur = conn.cursor()

@@ -33,6 +33,7 @@ from shahenbot_db import (
     create_poll_db,
     create_tenant_portal_token_db,
     create_user_db,
+    delete_building_for_testing_db,
     delete_building_request_db,
     get_building_by_unique_db,
     get_building_request_db,
@@ -795,6 +796,25 @@ def admin_buildings_delete(building_id: int):
 
     deactivate_building_db(building_id)
     return redirect(url_for("admin_buildings"))
+
+@app.post("/admin/dev/delete_building")
+def admin_delete_building():
+    u = require_super_admin()
+    if not isinstance(u, dict):
+        return u
+
+    building_id = request.form.get("building_id", type=int)
+    if not building_id:
+        flash("building_id required", "warning")
+        return redirect(url_for("admin_dashboard"))
+
+    try:
+        delete_building_for_testing_db(building_id)
+        flash(f"Building {building_id} deleted", "success")
+    except Exception as e:
+        flash(f"Delete failed: {e}", "danger")
+
+    return redirect(url_for("admin_dashboard"))
 
 # Building staff 
 @app.get("/admin/staff")

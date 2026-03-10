@@ -687,7 +687,7 @@ def require_building_admin():
     return u
 
 @app.get("/building-admin/tenants")
-def building_admin_tenants():
+def admin_tenants():
     u = require_building_admin()
     if not isinstance(u, dict):
         return u

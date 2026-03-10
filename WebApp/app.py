@@ -675,16 +675,40 @@ def admin_update_status(ticket_id):
 # ───────────────────────────────────────────────
 #   ADMIN: TENANTS LIST + EDIT
 # ───────────────────────────────────────────────
-@app.get("/admin/tenants")
-def admin_tenants():
-    search = request.args.get("search", "").strip()
-    tenants = get_tenants_db(limit=300, search=search)
-    buildings = list_buildings_db()
+def require_building_admin():
+    u = require_login()
+    if not isinstance(u, dict):
+        return u
+
+    role = (u.get("role") or "").strip().lower()
+    if role not in ("building_admin", "super_admin"):
+        return redirect(url_for("login"))
+
+    return u
+
+@app.get("/building-admin/tenants")
+def building_admin_tenants():
+    u = require_building_admin()
+    if not isinstance(u, dict):
+        return u
+
+    search = (request.args.get("search") or "").strip()
+    limit = int(request.args.get("limit") or "200")
+
+    building_filter = scoped_building_id(u)
+
+    tenants = get_tenants_db(
+        limit=limit,
+        search=search if search else None,
+        building_id=building_filter,
+    )
+
     return render_template(
         "tenants.html",
         tenants=tenants,
-        buildings =buildings,
         search=search,
+        limit=limit,
+        current_user=u,
     )
 
 @app.post("/admin/tenants/add")
@@ -1039,12 +1063,23 @@ def api_payments_attach_proof(payment_id):
 
 @app.get("/admin/payments")
 def admin_payments():
-    # super admin can view all; optional building_id filter
-    building_id = request.args.get("building_id", type=int)  # None => all buildings
+    u = require_building_admin()
+    if not isinstance(u, dict):
+        return u
+
+    role = (u.get("role") or "").strip().lower()
+
+    # super_admin can choose any building / all
+    if role == "super_admin":
+        building_id = request.args.get("building_id", type=int)  # None => all buildings
+        buildings = get_buildings_db()
+    else:
+        # building_admin can only see own building
+        building_id = scoped_building_id(u)
+        buildings = []
+
     year = request.args.get("year", type=int)
     month = request.args.get("month", type=int)
-
-    buildings = get_buildings_db()
 
     payments = get_pending_payments_db(building_id)
     due_now = get_due_tenants_db(building_id, days_ahead=0)
@@ -1064,6 +1099,7 @@ def admin_payments():
         total_sum=total_sum,
         year=year,
         month=month,
+        current_user=u,
     )
 
 @app.post("/admin/payments/<int:payment_id>/approve")

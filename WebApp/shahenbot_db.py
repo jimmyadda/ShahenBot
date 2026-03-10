@@ -442,17 +442,25 @@ def get_tenant_by_chat_id_db(chat_id: int) -> dict | None:
         "next_payment_date": r[7], "parking_slots": r[8], "chat_id": r[9],
     }
 
-def get_tenants_db(limit: int = 200, search: str | None = None) -> list:
+def get_tenants_db(
+    limit: int = 200,
+    search: str | None = None,
+    building_id: int | None = None,
+) -> list:
     conn = get_connection()
     cur = conn.cursor()
 
     query = """
         SELECT id, name, apartment, tenant_type, email,
-               payment_type, next_payment_date, parking_slots, chat_id
+               payment_type, next_payment_date, parking_slots, chat_id, building_id
         FROM tenants
         WHERE 1=1
     """
     params = []
+
+    if building_id is not None:
+        query += " AND building_id = ?"
+        params.append(int(building_id))
 
     if search:
         query += """
@@ -485,6 +493,7 @@ def get_tenants_db(limit: int = 200, search: str | None = None) -> list:
                 "next_payment_date": r[6],
                 "parking_slots": r[7],
                 "chat_id": r[8],
+                "building_id": r[9],
             }
         )
     return tenants

@@ -29,6 +29,7 @@ from shahenbot_db import (
     compute_missing_tenant_fields,
     create_announcement_db,
     create_building_request_db,
+    create_or_update_building_admin_staff_user,
     create_pending_payment_db,
     create_poll_db,
     create_tenant_portal_token_db,
@@ -1500,6 +1501,10 @@ def approve_building_request(req_id: int):
             return redirect(url_for("admin_building_requests"))
 
         building_id, building_code, admin_email, invite_code = res
+        create_or_update_building_admin_staff_user(
+            email=admin_email,
+            building_id=building_id
+        )
 
         try:
             from Mailer import send_email

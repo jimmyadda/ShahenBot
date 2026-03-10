@@ -2507,6 +2507,48 @@ def approve_building_request_atomic_db(req_id: int, approved_by: str | None = No
     finally:
         conn.close()
 
+def create_or_update_building_admin_staff_user(email: str, building_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    email = (email or "").strip().lower()
+    if not email:
+        raise ValueError("email is required")
+
+    # check existing
+    cur.execute("""
+        SELECT id
+        FROM staff_users
+        WHERE LOWER(username) = LOWER(?)
+        LIMIT 1
+    """, (email,))
+    row = cur.fetchone()
+
+    if row:
+        staff_user_id = row[0]
+
+        cur.execute("""
+            UPDATE staff_users
+            SET email = ?,
+                role = 'building_admin',
+                building_id = ?
+            WHERE id = ?
+        """, (email, building_id, staff_user_id))
+
+    else:
+        cur.execute("""
+            INSERT INTO staff_users (username, email, role, building_id)
+            VALUES (?, ?, 'building_admin', ?)
+        """, (email, email, building_id))
+
+        staff_user_id = cur.lastrowid
+
+    conn.commit()
+    conn.close()
+
+    return staff_user_id
+
+
 def verify_admin_invite_db(email: str, invite_code: str):
     """
     Returns building row if match, else None.

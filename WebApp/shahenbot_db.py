@@ -1199,6 +1199,21 @@ def get_staff_user_by_username_db(username: str) -> dict | None:
         return None
     return {"id": r[0], "username": r[1], "password_hash": r[2], "role": r[3], "building_id": r[4]}
 
+def get_staff_user_by_email_db(email: str):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT *
+        FROM staff_users
+        WHERE LOWER(email) = LOWER(?)
+        LIMIT 1
+    """, (email,))
+    
+    row = cur.fetchone()
+    conn.close()
+    return row
+
 def get_staff_user_by_id_db(user_id: int) -> dict | None:
     conn = get_connection()
     cur = conn.cursor()
@@ -2513,13 +2528,13 @@ def create_or_update_building_admin_staff_user(email: str, building_id: int):
 
     email = (email or "").strip().lower()
     if not email:
-        raise ValueError("email is required")
+        raise ValueError("email required")
 
-    # check existing
+    # check existing user by email
     cur.execute("""
         SELECT id
         FROM staff_users
-        WHERE LOWER(username) = LOWER(?)
+        WHERE LOWER(email) = LOWER(?)
         LIMIT 1
     """, (email,))
     row = cur.fetchone()
@@ -2529,17 +2544,19 @@ def create_or_update_building_admin_staff_user(email: str, building_id: int):
 
         cur.execute("""
             UPDATE staff_users
-            SET email = ?,
-                role = 'building_admin',
+            SET role = 'building_admin',
                 building_id = ?
             WHERE id = ?
-        """, (email, building_id, staff_user_id))
+        """, (building_id, staff_user_id))
 
     else:
+        dummy_password_hash = generate_password_hash("invite-login")
+
         cur.execute("""
-            INSERT INTO staff_users (username, email, role, building_id)
-            VALUES (?, ?, 'building_admin', ?)
-        """, (email, email, building_id))
+            INSERT INTO staff_users
+            (username, email, password_hash, role, building_id, created_at)
+            VALUES (?, ?, ?, 'building_admin', ?, datetime('now'))
+        """, (email, email, dummy_password_hash, building_id))
 
         staff_user_id = cur.lastrowid
 
@@ -2547,7 +2564,6 @@ def create_or_update_building_admin_staff_user(email: str, building_id: int):
     conn.close()
 
     return staff_user_id
-
 
 def verify_admin_invite_db(email: str, invite_code: str):
     """

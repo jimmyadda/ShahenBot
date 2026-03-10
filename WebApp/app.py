@@ -45,6 +45,7 @@ from shahenbot_db import (
     get_pending_payments_db,
     get_poll_with_options_db,
     get_recipients_chat_ids_by_group_db,
+    get_staff_user_by_email_db,
     get_tenant_by_id_db,
     get_tenant_portal_token_db,
     get_tenants_by_building_apartment_db,
@@ -327,30 +328,37 @@ def building_login_post():
     email = (request.form.get("email") or "").strip().lower()
     invite_code = (request.form.get("invite_code") or "").strip()
 
+    if not email or not invite_code:
+        return render_template(
+            "building_login.html",
+            error="Email and verification code are required."
+        )
+
     building = verify_admin_invite_db(email, invite_code)
     if not building:
-        return render_template("building_login.html", error="Invalid email or verification code.")
+        return render_template(
+            "building_login.html",
+            error="Invalid email or verification code."
+        )
 
-    user = get_user_by_email_db(email)
+    # make sure staff user exists / is updated for this building
+    create_or_update_building_admin_staff_user(
+        email=email,
+        building_id=int(building["id"])
+    )
+
+    user = get_staff_user_by_email_db(email)
     if not user:
-        user_id = create_user_db(
-            email=email,
-            role="building_admin",
-            building_id=int(building["id"])
+        return render_template(
+            "building_login.html",
+            error="Building admin user not found."
         )
-        user = get_user_by_id_db(user_id)
-    else:
-        upgrade_user_to_building_admin_db(
-            user_id=int(user["id"]),
-            building_id=int(building["id"]),
-            email=email
-        )
-        user = get_user_by_id_db(int(user["id"]))
 
     session.clear()
-    session["user_id"] = user["id"]
+    session["staff_user_id"] = user["id"]
 
     return redirect(url_for("building_admin_dashboard"))
+
 # ───────────────────────────────────────────────
 #   API: GET USER LANGUAGE
 # ───────────────────────────────────────────────

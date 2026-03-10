@@ -354,6 +354,7 @@ def building_login_post():
             error="Building admin user not found."
         )
 
+
     session.clear()
     session["staff_user_id"] = user["id"]
 

@@ -26,7 +26,10 @@ if not BOT_TOKEN:
 
 API_BASE_URL = os.getenv("SHAHEN_API_URL", "http://localhost:5001")
 DISABLE_POLLING = os.getenv("DISABLE_POLLING", "").lower() == "true"
-
+BUILDING_LOGIN_URL = os.getenv(
+    "BUILDING_LOGIN_URL",
+    "https://shahenbotweb.up.railway.app/building-login"
+)
 # ───────────── Logging ─────────────
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -744,8 +747,21 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             if resp.ok:
                 await msg.reply_text(get_text(lang, "verify_success"))
+
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton(
+                        get_text(lang, "btn_building_login"),
+                        url=BUILDING_LOGIN_URL
+                    )]
+                ])
+
+                await msg.reply_text(
+                    get_text(lang, "verify_success_login").format(
+                        login_url=BUILDING_LOGIN_URL
+                    ),
+                    reply_markup=keyboard
+                )
             else:
-                # אפשר להסתכל על resp.json() ולהציג הודעות שונות לפי error code בעתיד
                 await msg.reply_text(get_text(lang, "verify_fail"))
 
         except Exception:

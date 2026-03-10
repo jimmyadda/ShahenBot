@@ -93,7 +93,9 @@
   "verify_fail": "קוד או אימייל לא תקינים.",
    "verify_error": "אירעה שגיאה באימות הקוד.",
    "server_comm_error": "שגיאת תקשורת עם השרת.",
-"request_generic_error": "אירעה שגיאה. נסה שוב מאוחר יותר."
+"request_generic_error": "אירעה שגיאה. נסה שוב מאוחר יותר.",
+"verify_success_login": "האימות הצליח ✅\n\nכעת ניתן להיכנס למערכת הניהול דרך הקישור:\n{login_url}",
+"btn_building_login": "כניסה לפורטל ועד"
 
   },
   "en": {
@@ -190,7 +192,9 @@
   "verify_fail": "Invalid email or admin code.",
   "verify_error": "Error while verifying the admin code.",
   "server_comm_error": "Server communication error.",
-"request_generic_error": "An error occurred. Please try again later."
+"request_generic_error": "An error occurred. Please try again later.",
+"verify_success_login": "Verification successful ✅\n\nYou can now log in to the building admin panel using this link:\n{login_url}",
+"btn_building_login": "Open Building Portal"
   },
   "fr": {
     "start": "Salut 👋 je suis le bot de l’immeuble.\nChoisissez une langue puis vous pourrez signaler un problème.",
@@ -286,7 +290,9 @@
   "verify_fail": "Email ou code administrateur invalide.",
   "verify_error": "Erreur lors de la vérification du code.",
   "server_comm_error": "Erreur de communication avec le serveur.",
-"request_generic_error": "Une erreur est survenue. Veuillez réessayer plus tard."
+"request_generic_error": "Une erreur est survenue. Veuillez réessayer plus tard.",
+"verify_success_login": "Vérification réussie ✅\n\nVous pouvez maintenant vous connecter au panneau d'administration via ce lien :\n{login_url}",
+"btn_building_login": "Ouvrir le portail immeuble"
 
   }
 }

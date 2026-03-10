@@ -317,6 +317,39 @@ def logout():
 def home():
     return redirect(url_for("login"))
 
+@app.get("/building-login")
+def building_login():
+    return render_template("building_login.html", error=None)
+
+@app.post("/building-login")
+def building_login_post():
+    email = (request.form.get("email") or "").strip().lower()
+    invite_code = (request.form.get("invite_code") or "").strip()
+
+    building = verify_admin_invite_db(email, invite_code)
+    if not building:
+        return render_template("building_login.html", error="Invalid email or verification code.")
+
+    user = get_user_by_email_db(email)
+    if not user:
+        user_id = create_user_db(
+            email=email,
+            role="building_admin",
+            building_id=int(building["id"])
+        )
+        user = get_user_by_id_db(user_id)
+    else:
+        upgrade_user_to_building_admin_db(
+            user_id=int(user["id"]),
+            building_id=int(building["id"]),
+            email=email
+        )
+        user = get_user_by_id_db(int(user["id"]))
+
+    session.clear()
+    session["user_id"] = user["id"]
+
+    return redirect(url_for("building_admin_dashboard"))
 # ───────────────────────────────────────────────
 #   API: GET USER LANGUAGE
 # ───────────────────────────────────────────────

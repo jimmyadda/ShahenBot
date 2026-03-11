@@ -3,10 +3,12 @@ from datetime import date
 from functools import wraps
 import logging
 import os
+from pathlib import Path
 import secrets
+import shutil
 import sqlite3
 import string
-from flask import Response, flash, session, abort
+from flask import Response, flash, send_file, session, abort
 from dotenv import load_dotenv
 import requests
 import uuid
@@ -1652,6 +1654,26 @@ def admin_reset_user():
 
     return redirect(url_for("admin_dashboard"))
 
+@app.get("/admin/dev/download-db")
+def admin_download_db():
+    u = require_super_admin()
+    DB_PATH = Path(__file__).with_name("shahenbot.db")
+    if not isinstance(u, dict):
+        return u
+
+    db_path = DB_PATH
+    backup_path = "/tmp/shahenbot-backup.db"
+
+    if not db_path.exists():
+        abort(404, "Database file not found")
+
+    shutil.copy2(db_path, backup_path)
+
+    return send_file(
+        backup_path,
+        as_attachment=True,
+        download_name="shahenbot-backup.db"
+    )
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5001"))
     app.run(host="0.0.0.0", port=port)    

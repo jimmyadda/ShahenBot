@@ -702,13 +702,17 @@ def admin_tenants():
         search=search if search else None,
         building_id=building_filter,
     )
-
+    flash(
+    f"DEBUG role={u.get('role')} user_building_id={u.get('building_id')} scoped={building_filter}",
+    "info"
+    )
     return render_template(
         "tenants.html",
         tenants=tenants,
         search=search,
         limit=limit,
         current_user=u,
+        scoped_building_id_value=building_filter,
     )
 
 @app.post("/admin/tenants/add")

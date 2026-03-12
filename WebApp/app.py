@@ -60,6 +60,7 @@ from shahenbot_db import (
     is_fully_registered,
     is_tenant_fully_registered,
     is_token_expired,
+    link_staff_user_telegram_db,
     link_telegram_admin_to_building_db,
     list_announcements_db,
     list_building_announcements_db,
@@ -1004,11 +1005,13 @@ def api_verify_invite():
 
     building_id = int(building["id"])
 
-    link_telegram_admin_to_building_db(
-        chat_id=chat_id,
+    create_or_update_building_admin_staff_user(
         email=email,
-        building_id=building_id,
+        building_id=building_id
     )
+
+    # optional: store telegram_user_id on staff_users
+    link_staff_user_telegram_db(email=email, chat_id=chat_id)
 
     return jsonify({
         "ok": True,

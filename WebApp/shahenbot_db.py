@@ -2617,6 +2617,19 @@ def link_telegram_admin_to_building_db(chat_id: str, email: str, building_id: in
     conn.commit()
     conn.close()
 
+def link_staff_user_telegram_db(email: str, chat_id: str):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE staff_users
+        SET telegram_user_id = ?
+        WHERE LOWER(email) = LOWER(?)
+    """, (chat_id, email.strip().lower()))
+
+    conn.commit()
+    conn.close()
+    
 def upgrade_user_to_building_admin_db(user_id: int, building_id: int, email: str | None = None):
     conn = get_connection()
     cur = conn.cursor()

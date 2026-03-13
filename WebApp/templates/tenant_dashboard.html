@@ -4,25 +4,47 @@
 
 {% block content %}
 <div class="sb-content-inner">
-  <div class="sb-grid">
+  <div class="sb-stack mb-4">
 
-    <!-- LEFT / MAIN -->
-    <div class="sb-stack">
-
-      <div class="sb-card">
-        <div class="sb-hero">
-          <div>
-            <h1 class="sb-hero-title">שלום {{ tenant.name }} 👋</h1>
-            <div class="sb-hero-meta">
-              דירה {{ tenant.apartment }}
-              • תשלום הבא: {{ tenant.next_payment_date or "—" }}
-            </div>
+    <!-- HERO -->
+    <div class="sb-card">
+      <div class="sb-hero">
+        <div>
+          <h1 class="sb-hero-title">שלום {{ tenant.name }} 👋</h1>
+          <div class="sb-hero-meta">
+            דירה {{ tenant.apartment }}
           </div>
         </div>
-      </div>
-      
 
-      <!-- Announcements -->
+        <span class="sb-badge">פורטל דייר</span>
+      </div>
+    </div>
+
+    <!-- KPI CARDS -->
+    <div class="sb-kpi-grid">
+      <div class="sb-card sb-kpi-card">
+        <div class="sb-kpi-label">תשלום הבא</div>
+        <div class="sb-kpi-value">{{ tenant.next_payment_date or "—" }}</div>
+      </div>
+
+      <div class="sb-card sb-kpi-card">
+        <div class="sb-kpi-label">הודעות אחרונות</div>
+        <div class="sb-kpi-value">{{ announcements|length }}</div>
+      </div>
+
+      <div class="sb-card sb-kpi-card">
+        <div class="sb-kpi-label">טיקטים פתוחים</div>
+        <div class="sb-kpi-value">{{ tickets|length }}</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="sb-grid">
+
+    <!-- MAIN -->
+    <div class="sb-stack">
+
       <div class="sb-card">
         <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
           <h3 class="sb-card-title m-0">📢 הודעות אחרונות</h3>
@@ -84,10 +106,9 @@
 
     </div>
 
-    <!-- RIGHT / SIDE -->
+    <!-- SIDE -->
     <div class="sb-stack">
 
-      <!-- Tickets -->
       <div class="sb-card">
         <h3 class="sb-card-title">🎫 הטיקטים שלי</h3>
 
@@ -119,7 +140,6 @@
         {% endif %}
       </div>
 
-      <!-- Payments -->
       <div class="sb-card">
         <h3 class="sb-card-title">💳 תשלומים</h3>
 

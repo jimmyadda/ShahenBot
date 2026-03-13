@@ -75,7 +75,7 @@
 
     <nav class="sb-nav">
       <a class="sb-link {% if request.endpoint=='admin_dashboard' %}active{% endif %}"
-         href="{{ url_for('admin_dashboard') }}">🎫 Tickets</a>
+         href="{{ url_for('building_admin_dashboard') }}">🎫 Tickets</a>
 
       <a class="sb-link {% if request.endpoint=='admin_tenants' %}active{% endif %}"
          href="{{ url_for('admin_tenants') }}">👥 Tenants</a>
@@ -99,6 +99,8 @@
      href="{{ url_for('admin_building_requests') }}">
     🏢 Building Requests
   </a>
+          <a class="sb-link"
+          href="{{ url_for('admin_dashboard') }}">Dev</a>
       {% endif %}
     </nav>
 

@@ -54,8 +54,6 @@
            href="{{ url_for('admin_buildings') }}">🏙️ Buildings</a>
         <a class="sb-link {% if request.endpoint=='admin_staff' %}active{% endif %}"
            href="{{ url_for('admin_staff') }}">👤 Staff</a>
-        <a class="sb-link {% if request.endpoint=='admin_dashboard' %}active{% endif %}"
-          href="{{ url_for('admin_dashboard') }}">Dev</a>
       {% endif %}
     </nav>
 

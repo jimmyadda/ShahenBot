@@ -36,7 +36,7 @@
     {% if current_user and current_user.role == "building_admin" %}
   <a class="sb-link {% if request.endpoint=='building_admin_dashboard' %}active{% endif %}"
      href="{{ url_for('building_admin_dashboard') }}">🎫 Tickets</a>
-{% else %}
+  {% elif current_user and current_user.role == "super_admin" %}
   <a class="sb-link {% if request.endpoint=='admin_dashboard' %}active{% endif %}"
      href="{{ url_for('admin_dashboard') }}">🎫 Tickets</a>
 {% endif %}

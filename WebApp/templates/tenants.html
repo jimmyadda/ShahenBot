@@ -88,9 +88,7 @@
                                     {% endif %}
                                 </td>
                                 <td>{{ t.next_payment_date or '' }}</td>
-                                <td>{{ t.parking_slots | replace(',', ', ') if t.parking_slots is not none else '' }}</td>
-                                <td class="text-muted small">building_id={{ t.building_id }}</td>
-                                <td>
+                                <td>{{ t.parking_slots | replace(',', ', ') if t.parking_slots is not none else '' }}</td>                                <td>
                                 <button
                                     type="button"
                                     id="edit-btn-{{ t.id }}"

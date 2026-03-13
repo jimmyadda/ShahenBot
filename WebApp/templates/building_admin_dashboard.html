@@ -18,23 +18,23 @@
 <!-- Filters -->
 <div class="card mb-4">
   <div class="card-body">
-    <form class="row g-3 align-items-end" method="get" action="{{ url_for('admin_dashboard') }}">
+    <form class="row g-3 align-items-end" method="get" action="{{ url_for('building_admin_dashboard') }}">
 
       <div class="col-md-2">
         <label class="form-label">Status</label>
         <select class="form-select form-select-sm" name="status">
-          {% for value, label in status_options %}
-            <option value="{{ value }}" {% if value == status %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
+        {% for s in status_options %}
+          <option value="{{ s }}" {% if selected_status == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
         </select>
       </div>
 
       <div class="col-md-2">
         <label class="form-label">Category</label>
         <select class="form-select form-select-sm" name="category">
-          {% for value, label in category_options %}
-            <option value="{{ value }}" {% if value == category %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
+      {% for c in category_options %}
+        <option value="{{ c }}" {% if selected_category == c %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
         </select>
       </div>
 
@@ -52,7 +52,7 @@
 
       <div class="col-md-3 d-flex gap-2">
         <button type="submit" class="btn btn-primary btn-sm flex-grow-1">🔍 Filter</button>
-        <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
+        <a href="{{ url_for('building_admin_dashboard') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
       </div>
 
     </form>

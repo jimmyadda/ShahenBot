@@ -51,8 +51,11 @@
     <div class="form-text mt-2">
       This will detach the Telegram chat from the tenant/user so the bot treats it as a new user on <code>/start</code>.
     </div>
-    <div class="card mt-4 border-danger">
-  <div class="card-body">
+  </div>
+</div>
+
+
+  <div class="card  mt-4 border-danger">
     <h5 class="text-danger">Dev Tools</h5>
 
     <form method="post" action="{{ url_for('admin_delete_building') }}" class="d-flex gap-2">
@@ -61,9 +64,6 @@
     </form>
 
   </div>
-</div>
-  </div>
-</div>
 {% endif %}
 
 </body>

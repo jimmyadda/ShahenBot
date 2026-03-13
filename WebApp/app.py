@@ -551,6 +551,10 @@ def building_admin_dashboard():
     search = request.args.get("search") or ""
     limit = int(request.args.get("limit") or "100")
 
+    status_options = ["","open", "in_progress", "closed"]
+    category_options = ["","🚗 בעיית חניה","🛗 בעיית מעלית","🚰 מים / אינסטלציה", "🔊 רעש / שכנים מרעישים"]
+
+
     building_filter = scoped_building_id(u)
     tenants = get_tenants_summary_db(building_filter)
     due_tenants = get_tenants_due_this_month_db(building_filter)
@@ -575,6 +579,8 @@ def building_admin_dashboard():
         tickets=tickets,
         status=status,
         category=category,
+        status_options=status_options,
+        category_options=category_options,        
         search=search,
         tenants=tenants,
         tenants_missing=tenants_missing,
@@ -699,16 +705,14 @@ def admin_tenants():
     limit = int(request.args.get("limit") or "200")
 
     building_filter = scoped_building_id(u)
+    buildings = list_buildings_db(limit=500)
 
     tenants = get_tenants_db(
         limit=limit,
         search=search if search else None,
         building_id=building_filter,
     )
-    flash(
-    f"DEBUG role={u.get('role')} user_building_id={u.get('building_id')} scoped={building_filter}",
-    "info"
-    )
+
     return render_template(
         "tenants.html",
         tenants=tenants,
@@ -716,6 +720,8 @@ def admin_tenants():
         limit=limit,
         current_user=u,
         scoped_building_id_value=building_filter,
+                buildings = buildings,
+                
     )
 
 @app.post("/admin/tenants/add")
@@ -729,6 +735,7 @@ def admin_add_tenant():
     parking = request.form.get("parking_slots", "").strip()
     chat_id = request.form.get("chat_id") or None
     building_id = int(request.form.get("building_id") or 0)
+    buildings = list_buildings_db(limit=500)
 
     parking = ",".join(s.strip() for s in parking.split(",") if s.strip())
     chat_id = int(chat_id) if chat_id else None
@@ -746,6 +753,7 @@ def admin_add_tenant():
         parking_slots=parking,
         building_id=building_id,
         chat_id=chat_id,
+        buildings = buildings,
     )
     return redirect(url_for("admin_tenants"))
 
@@ -759,7 +767,8 @@ def admin_update_tenant(tenant_id: int):
     next_payment_date = request.form.get("next_payment_date") or None
     parking_slots = request.form.get("parking_slots") or None
     building_id = int(request.form.get("building_id") or 0)
-
+    buildings = list_buildings_db(limit=500)
+    
     parking_slots = parking_slots if parking_slots else None
 
     if not name:
@@ -775,6 +784,7 @@ def admin_update_tenant(tenant_id: int):
         next_payment_date=next_payment_date,
         parking_slots=parking_slots,
         building_id=building_id,
+        buildings = buildings,
     )
 
     return redirect(url_for("admin_tenants"))
@@ -910,9 +920,7 @@ def admin_staff_create():
     username = (request.form.get("username") or "").strip()
     password = (request.form.get("password") or "").strip()
     role = request.form.get("role") or "building_admin"
-    building_id = request.form.get("building_id")
-    print(username,password,building_id)
-    
+    building_id = request.form.get("building_id")    
     buildings = list_buildings_db(limit=500)
     staff = list_staff_users_db()
 

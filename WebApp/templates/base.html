@@ -33,13 +33,8 @@
     </div>
 
     <nav class="sb-nav">
-    {% if current_user and current_user.role == "building_admin" %}
   <a class="sb-link {% if request.endpoint=='building_admin_dashboard' %}active{% endif %}"
      href="{{ url_for('building_admin_dashboard') }}">🎫 Tickets</a>
-  {% elif current_user and current_user.role == "super_admin" %}
-  <a class="sb-link {% if request.endpoint=='admin_dashboard' %}active{% endif %}"
-     href="{{ url_for('admin_dashboard') }}">🎫 Tickets</a>
-{% endif %}
 
       <a class="sb-link {% if request.endpoint=='admin_tenants' %}active{% endif %}"
          href="{{ url_for('admin_tenants') }}">👥 Tenants</a>
@@ -59,6 +54,8 @@
            href="{{ url_for('admin_buildings') }}">🏙️ Buildings</a>
         <a class="sb-link {% if request.endpoint=='admin_staff' %}active{% endif %}"
            href="{{ url_for('admin_staff') }}">👤 Staff</a>
+        <a class="sb-link {% if request.endpoint=='admin_dashboard' %}active{% endif %}"
+          href="{{ url_for('admin_dashboard') }}">Dev</a>
       {% endif %}
     </nav>
 

@@ -38,6 +38,7 @@ from shahenbot_db import (
     create_user_db,
     delete_building_for_testing_db,
     delete_building_request_db,
+    genarate_super_admin,
     get_building_by_unique_db,
     get_building_request_db,
     get_buildings_db,
@@ -1704,7 +1705,7 @@ def admin_download_db():
 
 @app.get("/admin/dev/create-super-admin")
 def create_super_admin_route():
-    ensure_super_admin("admin", "addajimmy@email.com", "ErEmEi@030609")
+    genarate_super_admin("admin", "addajimmy@email.com", "ErEmEi@030609")
     return {"ok": True}
 
 

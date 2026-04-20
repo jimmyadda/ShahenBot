@@ -2704,7 +2704,7 @@ def create_user_db(email: str, role: str = "tenant", building_id: int | None = N
     return user_id 
 ##user adm###
 
-def ensure_super_admin(username: str, email: str, password: str):
+def genarate_super_admin(username: str, email: str, password: str):
     conn = get_connection()
     cur = conn.cursor()
 

@@ -51,6 +51,7 @@ from shahenbot_db import (
     get_tenant_by_id_db,
     get_tenant_portal_token_db,
     get_tenants_by_building_apartment_db,
+    get_tenants_due_now_db,
     get_tenants_due_this_month_db,
     get_tenants_summary_db,
     get_user_by_email_db,
@@ -557,7 +558,7 @@ def building_admin_dashboard():
 
     building_filter = scoped_building_id(u)
     tenants = get_tenants_summary_db(building_filter)
-    due_tenants = get_tenants_due_this_month_db(building_filter)
+    due_tenants = get_tenants_due_now_db(building_filter)
     buildings = list_buildings_db() if role == "super_admin" else []
 
     tenants_missing = []

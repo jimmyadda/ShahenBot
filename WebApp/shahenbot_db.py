@@ -1299,7 +1299,6 @@ def get_tenants_due_now_db(building_id: int | None = None) -> list[dict]:
         "building_id": r[5],
     } for r in rows]
 
-
 def compute_missing_tenant_fields(tenant: dict) -> list[str]:
     missing = []
     if not (tenant.get("tenant_type") or "").strip():
@@ -1399,6 +1398,41 @@ def get_payment_by_id_db(payment_id: int) -> dict | None:
         "apartment": r[13],
         "chat_id": r[14],
         "next_payment_date": r[15],
+    }
+
+from datetime import date
+
+from datetime import date
+
+def get_tenant_payment_due_status_by_chat_id_db(chat_id: int) -> dict | None:
+    today = date.today().isoformat()
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, name, apartment, next_payment_date, payment_type, building_id
+        FROM tenants
+        WHERE chat_id = ?
+        LIMIT 1
+    """, (chat_id,))
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    due_date = row[3]
+
+    return {
+        "id": row[0],
+        "name": row[1],
+        "apartment": row[2],
+        "next_payment_date": due_date,
+        "payment_type": row[4],
+        "building_id": row[5],
+        "is_due": bool(due_date and due_date <= today),
+        "is_overdue": bool(due_date and due_date < today),
     }
 
 PAYMENT_WINDOW_DAYS = 14  # שבועיים

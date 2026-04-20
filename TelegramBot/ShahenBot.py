@@ -1,4 +1,5 @@
 import asyncio
+from datetime import date
 import time
 import logging
 import os
@@ -341,6 +342,26 @@ def api_create_portal_link(chat_id: int):
             return {"ok": False, "error": "http_error"}
     return r.json() or {}
 
+def api_get_tenant_payment_due_status(chat_id: int) -> dict | None:
+    try:
+        resp = requests.get(
+            f"{API_BASE_URL}/api/tenants/payment-status",
+            params={"chat_id": chat_id},
+            timeout=10,
+        )
+        if not resp.ok:
+            logger.error("payment-status API error: %s %s", resp.status_code, resp.text)
+            return None
+
+        data = resp.json()
+        if not data.get("ok"):
+            return None
+
+        return data.get("tenant")
+    except Exception as e:
+        logger.exception("payment-status API exception: %s", e)
+        return None
+    
 # ───────────── Keyword-based category detection ─────────────
 
 def detect_category_from_text(text: str, lang: str):
@@ -395,6 +416,52 @@ def parse_amount_to_cents(s: str):
 
     return int(round(val * 100))
 # ───────────── Telegram Handlers ─────────────
+
+
+async def maybe_send_payment_due_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    msg = update.message
+    if not msg:
+        return False
+
+    chat_id = msg.chat_id
+    lang = api_get_user_language(chat_id)
+
+    tenant = api_get_tenant_payment_due_status(chat_id)
+    if not tenant or not tenant.get("is_due"):
+        return False
+
+    today_str = date.today().isoformat()
+    if context.user_data.get("payment_due_reminder_sent_on") == today_str:
+        return False
+
+    title = (
+        get_text(lang, "payment_overdue_title")
+        if tenant.get("is_overdue")
+        else get_text(lang, "payment_due_today_title")
+    )
+
+    due_date = tenant.get("next_payment_date") or "-"
+    payment_type = tenant.get("payment_type") or "-"
+
+    text = (
+        f"{title}\n\n"
+        f"{get_text(lang, 'payment_due_date_label')}: {due_date}\n"
+        f"{get_text(lang, 'payment_type_label')}: {payment_type}\n\n"
+        f"{get_text(lang, 'payment_reminder_contact_or_pay')}"
+    )
+
+    keyboard = [
+        [InlineKeyboardButton(get_text(lang, "payment_btn_pay_now"), callback_data="pay_open")],
+        [InlineKeyboardButton(get_text(lang, "payment_btn_later"), callback_data="payment_reminder_later")]
+    ]
+
+    await msg.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+    context.user_data["payment_due_reminder_sent_on"] = today_str
+    return True
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -652,6 +719,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await maybe_send_payment_due_reminder(update, context)
     msg = update.message
     text = msg.text or ""
     chat = msg.chat
@@ -1383,6 +1451,14 @@ async def tenants_portal_command(update: Update, context: ContextTypes.DEFAULT_T
 
     await msg.reply_text(get_text(lang, "portal_link_ready"), reply_markup=kb)
 
+async def handle_payment_reminder_later(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
 
 def main():
     if DISABLE_POLLING:
@@ -1405,7 +1481,7 @@ def main():
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("tenantsportal", tenants_portal_command))
     app.add_error_handler(error_handler)
-
+    app.add_handler(CallbackQueryHandler(handle_payment_reminder_later, pattern="^payment_reminder_later$"))
     print(f"ShahenBot is running. API base: {API_BASE_URL}")
     app.run_polling()   # ✅ NO await
 

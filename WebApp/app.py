@@ -49,6 +49,7 @@ from shahenbot_db import (
     get_recipients_chat_ids_by_group_db,
     get_staff_user_by_email_db,
     get_tenant_by_id_db,
+    get_tenant_payment_due_status_by_chat_id_db,
     get_tenant_portal_token_db,
     get_tenants_by_building_apartment_db,
     get_tenants_due_now_db,
@@ -1253,6 +1254,19 @@ def api_update_tenant_name(tenant_id: int):
         return jsonify({"error": "not_found"}), 404
 
     return jsonify({"ok": True}), 200
+
+@app.get("/api/tenants/payment-status")
+def api_tenant_payment_status():
+    chat_id = request.args.get("chat_id", type=int)
+    if not chat_id:
+        return jsonify({"ok": False, "error": "missing chat_id"}), 400
+
+    tenant = get_tenant_payment_due_status_by_chat_id_db(chat_id)
+
+    return jsonify({
+        "ok": True,
+        "tenant": tenant
+    }), 200
 
 #--------Announcement----#
 @app.get("/admin/announcements")

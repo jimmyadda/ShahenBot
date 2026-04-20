@@ -96,6 +96,7 @@ def build_main_menu_keyboard(chat_id: int, lang: str):
         ])
 
     return InlineKeyboardMarkup(rows)
+
 # ───────────── API helpers ─────────────
 
 def api_get_user_language(chat_id: int, default_lang: str = "he") -> str:

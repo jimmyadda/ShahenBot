@@ -1266,14 +1266,8 @@ def list_staff_users_db(limit: int = 200) -> list[dict]:
         for r in rows
     ]
 
-def get_tenants_due_this_month_db(building_id: int | None = None) -> list[dict]:    
-    today = date.today().isoformat()          # 'YYYY-MM-DD'
-    month_start = date.today().replace(day=1)
-    next_month = (month_start + timedelta(days=32)).replace(day=1)
-    month_end = next_month - timedelta(days=1)
-
-    month_start_str = month_start.isoformat()
-    month_end_str = month_end.isoformat()
+def get_tenants_due_now_db(building_id: int | None = None) -> list[dict]:
+    today = date.today().isoformat()   # 'YYYY-MM-DD'
 
     conn = get_connection()
     cur = conn.cursor()
@@ -1282,10 +1276,9 @@ def get_tenants_due_this_month_db(building_id: int | None = None) -> list[dict]:
     SELECT id, name, apartment, next_payment_date, payment_type, building_id
     FROM tenants
     WHERE next_payment_date IS NOT NULL
-      AND next_payment_date >= ?
       AND next_payment_date <= ?
     """
-    params = [month_start_str, month_end_str]
+    params = [today]
 
     if building_id is not None:
         q += " AND building_id = ?"
@@ -1298,10 +1291,14 @@ def get_tenants_due_this_month_db(building_id: int | None = None) -> list[dict]:
     conn.close()
 
     return [{
-        "id": r[0], "name": r[1], "apartment": r[2],
-        "next_payment_date": r[3], "payment_type": r[4],
+        "id": r[0],
+        "name": r[1],
+        "apartment": r[2],
+        "next_payment_date": r[3],
+        "payment_type": r[4],
         "building_id": r[5],
     } for r in rows]
+
 
 def compute_missing_tenant_fields(tenant: dict) -> list[str]:
     missing = []

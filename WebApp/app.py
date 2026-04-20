@@ -52,7 +52,6 @@ from shahenbot_db import (
     get_tenant_portal_token_db,
     get_tenants_by_building_apartment_db,
     get_tenants_due_now_db,
-    get_tenants_due_this_month_db,
     get_tenants_summary_db,
     get_user_by_email_db,
     get_user_by_id_db,

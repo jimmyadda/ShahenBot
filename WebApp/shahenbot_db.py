@@ -2702,6 +2702,34 @@ def create_user_db(email: str, role: str = "tenant", building_id: int | None = N
     user_id = cur.lastrowid
     conn.close()
     return user_id 
+##user adm###
+
+def ensure_super_admin(username: str, email: str, password: str):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id FROM staff_users WHERE email = ? LIMIT 1
+    """, (email,))
+    row = cur.fetchone()
+
+    password_hash = generate_password_hash(password)
+
+    if row:
+        cur.execute("""
+            UPDATE staff_users
+            SET username = ?, password_hash = ?, role = 'super_admin', is_active = 1
+            WHERE id = ?
+        """, (username, password_hash, row[0]))
+    else:
+        cur.execute("""
+            INSERT INTO staff_users (username, email, password_hash, role, is_active)
+            VALUES (?, ?, ?, 'super_admin', 1)
+        """, (username, email, password_hash))
+
+    conn.commit()
+    conn.close()
+
 
 def reset_user_by_chat_id_db(chat_id: str):
     conn = get_connection()

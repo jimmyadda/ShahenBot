@@ -1702,6 +1702,11 @@ def admin_download_db():
         download_name="shahenbot-backup.db"
     )
 
+@app.get("/admin/dev/create-super-admin")
+def create_super_admin_route():
+    ensure_super_admin("admin", "addajimmy@email.com", "ErEmEi@030609")
+    return {"ok": True}
+
 
 @app.post("/admin/dev/reset-db")
 def reset_db_route():

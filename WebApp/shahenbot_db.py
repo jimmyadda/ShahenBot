@@ -1007,6 +1007,7 @@ def deactivate_building_db(building_id: int) -> bool:
     ok = cur.rowcount > 0
     conn.close()
     return ok
+
 # admin only - testing# 
 def delete_building_for_testing_db(building_id: int):
     conn = get_connection()
@@ -1178,6 +1179,7 @@ def upgrade_telegram_user_to_building_admin(telegram_user_id: str, email: str, i
     conn.commit()
     conn.close()
     return building_id
+
 # ─────────── Staff helpers ───────────
 
 def create_staff_user_db(username: str, password: str, role: str, building_id: int | None) -> dict:
@@ -1399,10 +1401,6 @@ def get_payment_by_id_db(payment_id: int) -> dict | None:
         "chat_id": r[14],
         "next_payment_date": r[15],
     }
-
-from datetime import date
-
-from datetime import date
 
 def get_tenant_payment_due_status_by_chat_id_db(chat_id: int) -> dict | None:
     today = date.today().isoformat()
@@ -2723,6 +2721,23 @@ def reset_user_by_chat_id_db(chat_id: str):
         """, (chat_id,))
     except Exception:
         pass
+
+    conn.commit()
+    conn.close()
+
+def reset_db_data():
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.executescript("""
+        DELETE FROM payments;
+        DELETE FROM building_requests;
+        DELETE FROM tenants;
+        DELETE FROM staff_users;
+        DELETE FROM buildings;
+        DELETE From tickets;                      
+        DELETE FROM sqlite_sequence;
+    """)
 
     conn.commit()
     conn.close()

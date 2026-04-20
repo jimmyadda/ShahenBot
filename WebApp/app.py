@@ -75,6 +75,7 @@ from shahenbot_db import (
     mark_tenant_portal_token_used_db,
     poll_results_db,
     reject_payment_db,
+    reset_db_data,
     reset_user_by_chat_id_db,
     resolve_building_by_street_number_db,
     save_building_request_db,
@@ -1269,6 +1270,7 @@ def api_tenant_payment_status():
     }), 200
 
 #--------Announcement----#
+
 @app.get("/admin/announcements")
 @admin_required
 def admin_announcements():
@@ -1699,6 +1701,18 @@ def admin_download_db():
         as_attachment=True,
         download_name="shahenbot-backup.db"
     )
+
+
+@app.post("/admin/dev/reset-db")
+def reset_db_route():
+    try:
+        reset_db_data()
+        return jsonify({"ok": True, "message": "DB reset successful"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5001"))
     app.run(host="0.0.0.0", port=port)    
+

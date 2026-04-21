@@ -2718,13 +2718,13 @@ def genarate_super_admin(username: str, email: str, password: str):
     if row:
         cur.execute("""
             UPDATE staff_users
-            SET username = ?, password_hash = ?, role = 'super_admin', is_active = 1
+            SET username = ?, password_hash = ?, role = 'super_admin'
             WHERE id = ?
         """, (username, password_hash, row[0]))
     else:
         cur.execute("""
-            INSERT INTO staff_users (username, email, password_hash, role, is_active)
-            VALUES (?, ?, ?, 'super_admin', 1)
+            INSERT INTO staff_users (username, email, password_hash, role)
+            VALUES (?, ?, ?, 'super_admin')
         """, (username, email, password_hash))
 
     conn.commit()

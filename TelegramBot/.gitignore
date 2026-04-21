@@ -1,3 +1,2 @@
 .env
 TelegramBot/.env
-*.db
